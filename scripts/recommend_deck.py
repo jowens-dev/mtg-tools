@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Recommend a rules-based, objective 99-card Commander deck list from an owned collection using the Spice Weighting Algorithm."""
+#!/usr/bin/env encoding=utf-8
+"""Recommend a rules-based, objective 99-card Commander deck list from an owned collection using the Spice Weighting Algorithm and advanced engine analysis."""
 
 import argparse
 import csv
@@ -8,6 +8,9 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+# Import math utility functions
+from math_utils import calculate_joint_consistency
 
 # --- OBJECTIVE CLASSIFIER REGEXES ---
 RAMP_PATTERNS = [
@@ -35,6 +38,17 @@ NOISE_TYPES = {
     "planeswalker", "land", "battle", "tribal", "hero", "scheme", "vanguard",
     "plains", "island", "swamp", "mountain", "forest", "wastes"
 }
+
+PROTECTION_KEYWORDS = [
+    r"\bhexproof\b", r"\bshroud\b", r"\bindestructible\b", 
+    r"\bphase out\b", r"\bregenerate\b", r"\bcounter target\b"
+]
+PROTECTION_REGEX = re.compile("|".join(PROTECTION_KEYWORDS), re.IGNORECASE)
+
+MULTIPLAYER_KEYWORDS = [
+    r"each opponent", r"whenever an opponent", r"each player", r"number of opponents"
+]
+MULTIPLAYER_REGEX = re.compile("|".join(MULTIPLAYER_KEYWORDS), re.IGNORECASE)
 
 
 def load_oracle_database(filepath: Path) -> dict:
@@ -190,6 +204,41 @@ def is_removal(card: dict) -> bool:
     return any(p.search(text) for p in REMOVAL_PATTERNS)
 
 
+def is_protection(card: dict) -> bool:
+    if is_land(card):
+        return False
+    text = card.get("oracle_text", "")
+    return bool(PROTECTION_REGEX.search(text))
+
+
+def is_multiplayer_scaling(card: dict) -> bool:
+    if is_land(card):
+        return False
+    text = card.get("oracle_text", "")
+    return bool(MULTIPLAYER_REGEX.search(text))
+
+
+def calculate_fragility_weight(card: dict) -> float:
+    """Determine the baseline fragility weight of a card type."""
+    type_line = card.get("type_line", "").lower()
+    if "land" in type_line:
+        return 0.05
+    
+    weights = []
+    if "creature" in type_line:
+        weights.append(0.8)
+    if "planeswalker" in type_line:
+        weights.append(0.7)
+    if "artifact" in type_line:
+        weights.append(0.6)
+    if "enchantment" in type_line:
+        weights.append(0.3)
+        
+    if weights:
+        return max(weights)
+    return 0.0  # Instants and Sorceries are non-permanents (no on-board disruption risk)
+
+
 def extract_commander_keywords(commander: dict) -> set[str]:
     """Extract mechanical keywords and creature subtypes from the commander for synergy mapping."""
     keywords = set()
@@ -227,7 +276,6 @@ def calculate_synergy_score(card: dict, keywords: set[str]) -> int:
     text_lower = card.get("oracle_text", "").lower()
     type_lower = card.get("type_line", "").lower()
     for kw in keywords:
-        # Match word boundaries or general containment
         score += len(re.findall(rf"\b{re.escape(kw)}\b", text_lower))
         if kw in type_lower:
             score += 1
@@ -291,6 +339,10 @@ def calculate_spice_score(card: dict, commander: dict, comm_keywords: set[str], 
     
     if satisfies_deep_cut:
         total_score *= 2.0
+        
+    # Multiplayer setting scaling
+    if is_multiplayer_scaling(card):
+        total_score *= 3.0
         
     return total_score, satisfies_deep_cut
 
@@ -421,6 +473,42 @@ def generate_deck(
         total_spice += score
     avg_spice = (total_spice / len(all_non_lands)) if all_non_lands else 0.0
 
+    # --- ADVANCED ENGINE METRICS ---
+    # 1. Fragility Indexing
+    non_land_permanents = [card for card in all_non_lands if not is_land(card) and calculate_fragility_weight(card) > 0.0]
+    total_fragility = sum(calculate_fragility_weight(card) for card in non_land_permanents)
+    avg_fragility = (total_fragility / len(non_land_permanents)) if non_land_permanents else 0.0
+    
+    # Scan for protection
+    protection_spells = [card for card in all_non_lands if is_protection(card)]
+    adjusted_fragility = avg_fragility - (len(protection_spells) * 0.05)
+    
+    if adjusted_fragility >= 0.6:
+        fragility_rating = "High Fragility"
+    elif adjusted_fragility >= 0.35:
+        fragility_rating = "Medium Fragility"
+    else:
+        fragility_rating = "Low Fragility"
+
+    # 2. Multiplayer Table-Pressure
+    scaling_spells = [card for card in all_non_lands if is_multiplayer_scaling(card)]
+    table_pressure_score = min(len(scaling_spells) * 10, 100)
+
+    # 3. Hypergeometric Draw Consistency
+    # Joint draw probability of >= 3 Lands, >= 1 Ramp, >= 1 Draw by Turn 6 (drawing 13 cards)
+    K_lands = len(selected_lands)
+    K_ramp = len(selected_ramp)
+    K_draw = len(selected_draw)
+    
+    joint_prob = calculate_joint_consistency(99, 13, K_lands, 3, K_ramp, 1, K_draw, 1)
+    
+    if joint_prob >= 0.70:
+        consistency_rating = "High Consistency"
+    elif joint_prob >= 0.50:
+        consistency_rating = "Medium Consistency"
+    else:
+        consistency_rating = "Low Consistency"
+
     return {
         "commander": commander,
         "keywords": comm_keywords,
@@ -430,7 +518,17 @@ def generate_deck(
         "removal": selected_removal,
         "synergy": selected_synergy,
         "spice_data": card_spice_data,
-        "average_spice": avg_spice
+        "average_spice": avg_spice,
+        
+        # Analytics payload
+        "avg_fragility": avg_fragility,
+        "protection_count": len(protection_spells),
+        "adjusted_fragility": adjusted_fragility,
+        "fragility_rating": fragility_rating,
+        "table_pressure_score": table_pressure_score,
+        "scaling_spells": scaling_spells,
+        "joint_prob": joint_prob,
+        "consistency_rating": consistency_rating
     }
 
 
@@ -508,7 +606,6 @@ def main():
     report.append("==================================================")
     report.append(f" Overall Deck Spice Score: {deck['average_spice']:.2f}")
     
-    # Sort non-land spells uniquely to list top 5 spiciest
     unique_non_lands = {}
     for card in all_non_lands_instances:
         name_lower = card["name"].lower()
@@ -522,6 +619,31 @@ def main():
     for name, score, deep_cut in sorted_unique_spices[:5]:
         deep_cut_tag = " [Deep Cut Overlap]" if deep_cut else ""
         report.append(f"  * {name} (Spice Score: {score:.2f}){deep_cut_tag}")
+
+    # Advanced Analysis results
+    report.append("\n==================================================")
+    report.append(" ADVANCED ENGINE ANALYSIS")
+    report.append("==================================================")
+    report.append("## 1. Fragility Indexing")
+    report.append(f"   * Average Permanent Fragility: {deck['avg_fragility']:.2f}")
+    report.append(f"   * Protection Spells Detected: {deck['protection_count']}")
+    report.append(f"   * Adjusted Fragility Score: {deck['adjusted_fragility']:.2f}")
+    report.append(f"   * Fragility Rating: {deck['fragility_rating']}")
+    if deck['fragility_rating'] == "High Fragility":
+        report.append("     [!] WARNING: Core engine relies on vulnerable permanent types. Consider adding protection.")
+        
+    report.append("\n## 2. Multiplayer Table-Pressure")
+    report.append(f"   * Table-Pressure Score: {deck['table_pressure_score']} / 100")
+    if deck['scaling_spells']:
+        report.append("   * Scaling Cards:")
+        # List unique scaling names
+        unique_scaling = sorted(list(set(c["name"] for c in deck["scaling_spells"])))
+        for name in unique_scaling:
+            report.append(f"     - {name}")
+            
+    report.append("\n## 3. Structural Engine Consistency")
+    report.append(f"   * Joint Draw Probability (Turn 6): {deck['joint_prob'] * 100:.1f}%")
+    report.append(f"   * Consistency Rating: {deck['consistency_rating']}")
 
     avg_cmc = (spells_cmc / spells_count) if spells_count > 0 else 0.0
     report.append("\n==================================================")
