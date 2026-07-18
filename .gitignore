@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+dist/
+build/
+*.spec
+
+# Exclude large raw Scryfall database
+scripts/oracle-cards.json
+
+# Exclude user collection bulk CSV data (keep examples only)
+data/collection_tagged.csv
+data/collection_tagged_bulk.csv
+data/32_deck_matrix.csv
