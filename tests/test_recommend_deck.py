@@ -11,6 +11,9 @@ from recommend_deck import (
     is_removal,
     calculate_synergy_score,
     extract_commander_keywords,
+    calculate_scarcity_score,
+    calculate_text_density_score,
+    calculate_spice_score,
     generate_deck
 )
 
@@ -33,7 +36,7 @@ def test_card_role_classification():
     assert is_ramp(MOCK_RAMP_SPELL) is True
     assert is_ramp(MOCK_RAMP_TREASURE) is True
     assert is_ramp(MOCK_PLAIN_CREATURE) is False
-    assert is_ramp(MOCK_LAND) is False  # Lands shouldn't be counted in the ramp spell slot
+    assert is_ramp(MOCK_LAND) is False
 
     assert is_draw(MOCK_DRAW_SPELL) is True
     assert is_draw(MOCK_PLAIN_CREATURE) is False
@@ -41,6 +44,84 @@ def test_card_role_classification():
     assert is_removal(MOCK_REMOVAL_SPELL) is True
     assert is_removal(MOCK_REMOVAL_COUNTER) is True
     assert is_removal(MOCK_PLAIN_CREATURE) is False
+
+
+def test_scarcity_score():
+    # Single print card
+    card_single = {"reprint": False, "set_type": "expansion"}
+    assert calculate_scarcity_score(card_single) == 10.0
+
+    # Common reprinted staple
+    card_core = {"reprint": True, "set_type": "core"}
+    assert calculate_scarcity_score(card_core) == 1.0
+
+    # Expansion reprint
+    card_expansion_reprint = {"reprint": True, "set_type": "expansion"}
+    assert calculate_scarcity_score(card_expansion_reprint) == 5.0
+
+
+def test_text_density_score():
+    # 100 character rules text, 2 CMC. Ratio = 100 / 2 = 50. Output = 50 / 50 = 1.0
+    card_normal = {"oracle_text": "A" * 100, "cmc": 2}
+    assert calculate_text_density_score(card_normal) == 1.0
+
+    # 50 character rules text, 0 CMC. Ratio = 50 / max(0, 0.5) = 100. Output = 100 / 50 = 2.0
+    card_free = {"oracle_text": "B" * 50, "cmc": 0}
+    assert calculate_text_density_score(card_free) == 2.0
+
+
+def test_calculate_spice_score():
+    # Setup commander
+    commander = {
+        "name": "Edgar Markov",
+        "subtypes": ["vampire"],
+        "keywords": []
+    }
+    comm_keywords = {"vampire"}
+
+    # Obscurity DB: Vampire is obscure (count 10), Shaman is common (count 500)
+    obscurity_db = {
+        "subtypes": {
+            "vampire": 10,
+            "shaman": 500
+        },
+        "keywords": {}
+    }
+
+    # Card 1: Core role (Ramp) and shares obscure subtype (Vampire) -> Deep Cut
+    card_deep = {
+        "name": "Blood Artist",
+        "type_line": "Creature — Vampire",
+        "subtypes": ["vampire"],
+        "oracle_text": "Search your library for a basic land card.",  # triggers is_ramp
+        "cmc": 2,
+        "reprint": True,
+        "set_type": "core"
+    }
+
+    # Card 2: Core role (Ramp) but shares common/no obscure subtype (Shaman) -> No Deep Cut
+    card_no_deep = {
+        "name": "Sakura-Tribe Elder",
+        "type_line": "Creature — Snake Shaman",
+        "subtypes": ["snake", "shaman"],
+        "oracle_text": "Search your library for a basic land card.",  # triggers is_ramp
+        "cmc": 2,
+        "reprint": True,
+        "set_type": "core"
+    }
+
+    score_deep, is_deep = calculate_spice_score(card_deep, commander, comm_keywords, obscurity_db)
+    score_no_deep, is_no_deep = calculate_spice_score(card_no_deep, commander, comm_keywords, obscurity_db)
+
+    assert is_deep is True
+    assert is_no_deep is False
+    
+    # Deep score should be doubled
+    # Blood Artist synergy: 3 (vampire subtype) + 1 (vampire in type line) = 4
+    # Scarcity: reprint in core = 1.0
+    # Text density: len("Search your library for a basic land card.") is 42. cmc is 2. 42/2 = 21.0. Density score = 21.0 / 50 = 0.42
+    # Total pre-deep = 4 + 1.0 + 0.42 = 5.42. Doubled = 10.84
+    assert score_deep == pytest.approx(10.84)
 
 
 def test_extract_commander_keywords():
@@ -77,13 +158,8 @@ def test_calculate_synergy_score():
         "oracle_text": "Counter target spell."
     }
 
-    # Blood Artist matches vampire subtype (3 points) + type line (1 point) = 4
     assert calculate_synergy_score(card_matching_both, keywords) == 4
-    
-    # Vampire Nighthawk matches vampire subtype (3 points) + type line (1 point) = 4
     assert calculate_synergy_score(card_matching_type, keywords) == 4
-    
-    # Counterspell matches nothing
     assert calculate_synergy_score(card_no_match, keywords) == 0
 
 
@@ -96,7 +172,9 @@ def test_deck_generation():
             "type_line": "Legendary Creature — Vampire Knight",
             "subtypes": ["vampire", "knight"],
             "oracle_text": "Create Vampire tokens.",
-            "cmc": 6
+            "cmc": 6,
+            "reprint": False,
+            "set_type": "expansion"
         },
         "vampire nighthawk": {
             "name": "Vampire Nighthawk",
@@ -104,7 +182,9 @@ def test_deck_generation():
             "type_line": "Creature — Vampire Shaman",
             "subtypes": ["vampire", "shaman"],
             "oracle_text": "Lifelink",
-            "cmc": 3
+            "cmc": 3,
+            "reprint": True,
+            "set_type": "core"
         },
         "sol ring": {
             "name": "Sol Ring",
@@ -112,7 +192,9 @@ def test_deck_generation():
             "type_line": "Artifact",
             "subtypes": [],
             "oracle_text": "{T}: Add {C}{C}.",
-            "cmc": 1
+            "cmc": 1,
+            "reprint": True,
+            "set_type": "core"
         },
         "swamp": {
             "name": "Swamp",
@@ -120,7 +202,9 @@ def test_deck_generation():
             "type_line": "Basic Land — Swamp",
             "subtypes": [],
             "oracle_text": "",
-            "cmc": 0
+            "cmc": 0,
+            "reprint": True,
+            "set_type": "core"
         },
         "counterspell": {
             "name": "Counterspell",
@@ -128,17 +212,20 @@ def test_deck_generation():
             "type_line": "Instant",
             "subtypes": [],
             "oracle_text": "Counter target spell.",
-            "cmc": 2
+            "cmc": 2,
+            "reprint": True,
+            "set_type": "core"
+        },
+        "_obscurity_db": {
+            "subtypes": {"vampire": 50, "shaman": 200},
+            "keywords": {}
         }
     }
 
     # Setup mock collection
     collection = ["Edgar Markov", "Vampire Nighthawk", "Sol Ring", "Counterspell"]
-    # Add 40 swamps to fill land and remaining requirements
     collection.extend(["Swamp"] * 40)
 
-    # Edgar Markov has WBR color identity.
-    # Counterspell has U color identity, so it should be filtered out.
     deck = generate_deck(
         "Edgar Markov",
         collection,
@@ -153,29 +240,19 @@ def test_deck_generation():
     # Assertions
     assert deck["commander"]["name"] == "Edgar Markov"
     assert "vampire" in deck["keywords"]
-    
-    # Lands check (should only contain valid color identity lands)
     assert len(deck["lands"]) == 10
     assert all(c["name"] == "Swamp" for c in deck["lands"])
 
-    # Sol ring is a ramp artifact
     assert len(deck["ramp"]) == 1
     assert deck["ramp"][0]["name"] == "Sol Ring"
 
-    # Counterspell is invalid color identity (Blue), so it shouldn't be in the deck
     all_deck_cards = deck["lands"] + deck["ramp"] + deck["draw"] + deck["removal"] + deck["synergy"]
     assert not any(c["name"] == "Counterspell" for c in all_deck_cards)
-    assert not any(c["name"] == "Edgar Markov" for c in all_deck_cards)  # Commander is excluded from deck lists
+    assert not any(c["name"] == "Edgar Markov" for c in all_deck_cards)
 
-    # Vampire Nighthawk matches "vampire" keyword, so it should be in the synergy slot
     assert any(c["name"] == "Vampire Nighthawk" for c in deck["synergy"])
 
-    # Vorthos details assertions
-    assert deck["commander_plane"] == "Innistrad"
-    # Vampire Nighthawk does not have Innistrad keywords in this minimal mock dict,
-    # so cohesion_score should be 0.0% (0 of 1 spells with resolved planes, wait: Sol Ring is not a land, but has no plane keywords).
-    # Since Sol Ring has no plane, spells_with_planes = 0.
-    # Therefore, cohesion_score should be None (or N/A).
-    assert deck["cohesion_score"] is None
-    assert len(deck["clashes"]) == 0
-
+    # Spice assertions
+    assert deck["average_spice"] > 0
+    assert "sol ring" in deck["spice_data"]
+    assert "vampire nighthawk" in deck["spice_data"]

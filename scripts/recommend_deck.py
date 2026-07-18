@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recommend a rules-based, objective 99-card Commander deck list from an owned collection, including flavor/Vorthos alignment analysis."""
+"""Recommend a rules-based, objective 99-card Commander deck list from an owned collection using the Spice Weighting Algorithm."""
 
 import argparse
 import csv
@@ -8,9 +8,6 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-
-# Import flavor engine functions
-from flavor_engine import resolve_card_plane, check_aesthetic_clash
 
 # --- OBJECTIVE CLASSIFIER REGEXES ---
 RAMP_PATTERNS = [
@@ -54,6 +51,9 @@ def load_oracle_database(filepath: Path) -> dict:
         print(f"Error parsing Oracle DB: {e}", file=sys.stderr)
         return database
 
+    keyword_counts = defaultdict(int)
+    subtype_counts = defaultdict(int)
+
     for card in raw_data:
         name = card.get("name", "")
         if not name:
@@ -64,6 +64,8 @@ def load_oracle_database(filepath: Path) -> dict:
         cmc = card.get("cmc", 0.0)
         set_code = card.get("set", "")
         flavor_text = card.get("flavor_text", "")
+        set_type = card.get("set_type", "")
+        reprint = card.get("reprint", False)
 
         # Handle double faced cards
         if "card_faces" in card:
@@ -83,6 +85,9 @@ def load_oracle_database(filepath: Path) -> dict:
         clean_types = type_line.replace("—", " ").replace("-", " ").lower().split()
         subtypes = [t for t in clean_types if t not in NOISE_TYPES and len(t) > 2]
 
+        # Extract keywords
+        raw_keywords = [kw.lower() for kw in card.get("keywords", []) if kw]
+
         database[name_lower] = {
             "name": name,
             "mana_cost": mana_cost,
@@ -93,9 +98,22 @@ def load_oracle_database(filepath: Path) -> dict:
             "oracle_text": oracle_text or "",
             "cmc": int(cmc),
             "set": set_code,
-            "flavor_text": flavor_text or ""
+            "flavor_text": flavor_text or "",
+            "set_type": set_type,
+            "reprint": reprint,
+            "keywords": raw_keywords
         }
 
+        # Track frequencies
+        for sub in subtypes:
+            subtype_counts[sub] += 1
+        for kw in raw_keywords:
+            keyword_counts[kw] += 1
+
+    database["_obscurity_db"] = {
+        "subtypes": subtype_counts,
+        "keywords": keyword_counts
+    }
     return database
 
 
@@ -217,6 +235,66 @@ def calculate_synergy_score(card: dict, keywords: set[str]) -> int:
     return score
 
 
+def calculate_scarcity_score(card: dict) -> float:
+    """Award higher spice points to cards with fewer historical printings."""
+    if not card.get("reprint", False):
+        return 10.0  # Never reprinted, highly scarce
+
+    set_type = card.get("set_type", "").lower()
+    if set_type in ("core", "commander", "box", "promo"):
+        return 1.0  # Generic reprinted staples
+    elif set_type == "expansion":
+        return 5.0  # Expansion set reprint
+    else:
+        return 3.0  # Other set types
+
+
+def calculate_text_density_score(card: dict) -> float:
+    """Calculate ratio of rules text character count to mana value."""
+    text_len = len(card.get("oracle_text", ""))
+    cmc = card.get("cmc", 0)
+    ratio = text_len / max(cmc, 0.5)
+    return ratio / 50.0  # Normalized scaled score
+
+
+def calculate_spice_score(card: dict, commander: dict, comm_keywords: set[str], obscurity_db: dict) -> tuple[float, bool]:
+    """Calculate the overall spice score of a card under the Commander."""
+    synergy = calculate_synergy_score(card, comm_keywords)
+    scarcity = calculate_scarcity_score(card)
+    density = calculate_text_density_score(card)
+    
+    total_score = synergy + scarcity + density
+    
+    # Check Deep Cut Overlap
+    has_obscure_match = False
+    is_core_role = is_ramp(card) or is_draw(card) or is_removal(card)
+    
+    if is_core_role and obscurity_db:
+        # Check subtypes
+        shared_subtypes = set(commander.get("subtypes", [])).intersection(set(card.get("subtypes", [])))
+        for sub in shared_subtypes:
+            sub_count = obscurity_db.get("subtypes", {}).get(sub, 0)
+            if 0 < sub_count <= 150:
+                has_obscure_match = True
+                break
+                
+        # Check keywords
+        if not has_obscure_match:
+            shared_kws = set(commander.get("keywords", [])).intersection(set(card.get("keywords", [])))
+            for kw in shared_kws:
+                kw_count = obscurity_db.get("keywords", {}).get(kw, 0)
+                if 0 < kw_count <= 150:
+                    has_obscure_match = True
+                    break
+                    
+    satisfies_deep_cut = is_core_role and has_obscure_match
+    
+    if satisfies_deep_cut:
+        total_score *= 2.0
+        
+    return total_score, satisfies_deep_cut
+
+
 def generate_deck(
     commander_name: str,
     collection_cards: list[str],
@@ -237,11 +315,10 @@ def generate_deck(
 
     # Extract keywords
     comm_keywords = extract_commander_keywords(commander)
+    obscurity_db = oracle_db.get("_obscurity_db", {})
 
     # Filter collection to valid card identities & map to oracle records
     valid_pool = []
-    seen = defaultdict(int)
-
     for name in collection_cards:
         name_lower = name.lower()
         if name_lower == comm_lower:
@@ -257,12 +334,15 @@ def generate_deck(
 
         valid_pool.append(card_info)
 
+    # Pre-score all cards using the Spice Weighting algorithm
     pool_scored = []
+    card_spice_data = {}
     for card in valid_pool:
-        score = calculate_synergy_score(card, comm_keywords)
+        score, deep_cut = calculate_spice_score(card, commander, comm_keywords, obscurity_db)
         pool_scored.append((card, score))
+        card_spice_data[card["name"].lower()] = (score, deep_cut)
 
-    # Sort all non-lands by synergy score (descending) and then cmc (ascending)
+    # Sort all cards by spice score (descending) and then cmc (ascending)
     pool_scored.sort(key=lambda x: (-x[1], x[0].get("cmc", 0)))
 
     # Allocate lands
@@ -333,40 +413,24 @@ def generate_deck(
                 remaining_inventory[card_name] -= 1
                 total_spells += 1
 
-    # --- FLAVOR & VORTHOS ANALYSIS ---
-    comm_plane = resolve_card_plane(commander)
-    clashes = []
-    spells_with_planes = 0
-    spells_matching_plane = 0
-
+    # Calculate overall deck spice score
     all_non_lands = selected_ramp + selected_draw + selected_removal + selected_synergy
+    total_spice = 0.0
     for card in all_non_lands:
-        card_plane = resolve_card_plane(card)
-        if card_plane:
-            spells_with_planes += 1
-            if comm_plane and card_plane == comm_plane:
-                spells_matching_plane += 1
-            
-            # Check for aesthetic clashes
-            clash, msg = check_aesthetic_clash(comm_plane, card_plane)
-            if clash:
-                clashes.append((card["name"], card_plane, msg))
-
-    cohesion_score = None
-    if comm_plane and spells_with_planes > 0:
-        cohesion_score = (spells_matching_plane / spells_with_planes) * 100.0
+        score, _ = card_spice_data[card["name"].lower()]
+        total_spice += score
+    avg_spice = (total_spice / len(all_non_lands)) if all_non_lands else 0.0
 
     return {
         "commander": commander,
-        "commander_plane": comm_plane,
         "keywords": comm_keywords,
         "lands": selected_lands,
         "ramp": selected_ramp,
         "draw": selected_draw,
         "removal": selected_removal,
         "synergy": selected_synergy,
-        "cohesion_score": cohesion_score,
-        "clashes": clashes
+        "spice_data": card_spice_data,
+        "average_spice": avg_spice
     }
 
 
@@ -408,10 +472,6 @@ def main():
     report.append(f" COMMANDER: {deck['commander']['name']}")
     report.append(f" Color Identity: {', '.join(deck['commander']['color_identity'])}")
     report.append(f" Detected Keywords: {', '.join(deck['keywords'])}")
-    
-    # Flavor mapping info
-    comm_plane_str = deck['commander_plane'] if deck['commander_plane'] else "Unknown / Generic"
-    report.append(f" Home Plane/Setting: {comm_plane_str}")
     report.append("==================================================")
 
     categories = [
@@ -425,6 +485,7 @@ def main():
     total_cards = 0
     spells_cmc = 0
     spells_count = 0
+    all_non_lands_instances = []
 
     for title, card_list in categories:
         report.append(f"\n## {title} ({len(card_list)})")
@@ -435,26 +496,32 @@ def main():
             if title != "Lands":
                 spells_cmc += c.get("cmc", 0)
                 spells_count += 1
+                all_non_lands_instances.append(c)
         
         for name, count in sorted(counts.items()):
             qty_str = f"{count}x" if count > 1 else "1 "
             report.append(f"  {qty_str} {name}")
 
-    # Flavor evaluation results
+    # Spice analysis results
     report.append("\n==================================================")
-    report.append(" VORTHOS FLAVOR & COHESION ANALYSIS")
+    report.append(" SPICE ANALYSIS REPORT")
     report.append("==================================================")
-    if deck["cohesion_score"] is not None:
-        report.append(f" Flavor Cohesion Score: {deck['cohesion_score']:.1f}%")
-    else:
-        report.append(" Flavor Cohesion Score: N/A (Commander's Plane Unknown)")
-
-    if deck["clashes"]:
-        report.append(f"\n[!] Vorthos Clashes Detected ({len(deck['clashes'])}):")
-        for card_name, plane, msg in deck["clashes"]:
-            report.append(f"  * {card_name} ({plane}) -> {msg}")
-    else:
-        report.append("\n[x] No Vorthos aesthetic clashes detected.")
+    report.append(f" Overall Deck Spice Score: {deck['average_spice']:.2f}")
+    
+    # Sort non-land spells uniquely to list top 5 spiciest
+    unique_non_lands = {}
+    for card in all_non_lands_instances:
+        name_lower = card["name"].lower()
+        if name_lower not in unique_non_lands:
+            score, deep_cut = deck["spice_data"][name_lower]
+            unique_non_lands[name_lower] = (card["name"], score, deep_cut)
+            
+    sorted_unique_spices = sorted(unique_non_lands.values(), key=lambda x: x[1], reverse=True)
+    
+    report.append("\n## Top 5 Spiciest Cuts:")
+    for name, score, deep_cut in sorted_unique_spices[:5]:
+        deep_cut_tag = " [Deep Cut Overlap]" if deep_cut else ""
+        report.append(f"  * {name} (Spice Score: {score:.2f}){deep_cut_tag}")
 
     avg_cmc = (spells_cmc / spells_count) if spells_count > 0 else 0.0
     report.append("\n==================================================")
