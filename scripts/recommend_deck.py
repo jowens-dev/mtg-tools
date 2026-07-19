@@ -115,7 +115,9 @@ def load_oracle_database(filepath: Path) -> dict:
             "flavor_text": flavor_text or "",
             "set_type": set_type,
             "reprint": reprint,
-            "keywords": raw_keywords
+            "keywords": raw_keywords,
+            "types": subtypes,      # Compatibility for UI dashboard
+            "raw_type": type_line   # Compatibility for UI dashboard
         }
 
         # Track frequencies
