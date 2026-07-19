@@ -1,4 +1,4 @@
-#!/usr/bin/env encoding=utf-8
+#!/usr/bin/env python3
 """Recommend a rules-based, objective 99-card Commander deck list from an owned collection using the Spice Weighting Algorithm and advanced engine analysis."""
 
 import argparse
@@ -49,6 +49,30 @@ MULTIPLAYER_KEYWORDS = [
     r"each opponent", r"whenever an opponent", r"each player", r"number of opponents"
 ]
 MULTIPLAYER_REGEX = re.compile("|".join(MULTIPLAYER_KEYWORDS), re.IGNORECASE)
+
+# --- INTENTIONAL EXPERIENCE (IX) CONFIGS ---
+INTENT_KEYWORDS = {
+    "Aggro-Combat": ["combat", "attack", "damage", "trample", "haste", "double strike"],
+    "Grindy Value Engine": ["recursion", "draw", "graveyard", "return", "whenever", "end step", "trigger"],
+    "Deterministic Combo": ["infinite", "win the game", "tutor", "search your library", "untap"],
+    "Political/Interactive": ["monarch", "vote", "council", "tempt", "choice", "gains control"]
+}
+
+FAST_MANA_CARDS = {
+    "mana vault", "mana crypt", "jeweled lotus", "mox diamond", "chrome mox", 
+    "mox opal", "grim monolith", "lion's eye diamond"
+}
+
+HIGH_EFFICIENCY_TUTORS = {
+    "demonic tutor", "vampiric tutor", "mystical tutor", "enlightened tutor", 
+    "worldly tutor", "imperial seal"
+}
+
+FINISHER_KEYWORDS = [
+    r"win the game", r"loses the game", r"additional combat phase", 
+    r"\binfect\b", r"creatures you control get \+\d+/\+\d+"
+]
+FINISHER_REGEX = re.compile("|".join(FINISHER_KEYWORDS), re.IGNORECASE)
 
 
 def load_oracle_database(filepath: Path) -> dict:
@@ -181,6 +205,17 @@ def load_collection(filepath: Path) -> list[str]:
     return cards
 
 
+def load_intent_profile(filepath: Path) -> dict:
+    """Load the Deck Intent Profile header from a JSON config file."""
+    if filepath.exists():
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not parse intent profile at {filepath}: {e}", file=sys.stderr)
+    return {"target_ix": "Aggro-Combat", "bracket_level": 2, "win_cons_needed": 3}
+
+
 def is_land(card: dict) -> bool:
     return "land" in card.get("type_line", "").lower()
 
@@ -307,8 +342,14 @@ def calculate_text_density_score(card: dict) -> float:
     return ratio / 50.0  # Normalized scaled score
 
 
-def calculate_spice_score(card: dict, commander: dict, comm_keywords: set[str], obscurity_db: dict) -> tuple[float, bool]:
-    """Calculate the overall spice score of a card under the Commander."""
+def calculate_spice_score(
+    card: dict,
+    commander: dict,
+    comm_keywords: set[str],
+    obscurity_db: dict,
+    target_ix: str = None
+) -> tuple[float, bool]:
+    """Calculate the overall spice score of a card under the Commander, incorporating Playstyle Intentions."""
     synergy = calculate_synergy_score(card, comm_keywords)
     scarcity = calculate_scarcity_score(card)
     density = calculate_text_density_score(card)
@@ -346,6 +387,13 @@ def calculate_spice_score(card: dict, commander: dict, comm_keywords: set[str], 
     if is_multiplayer_scaling(card):
         total_score *= 3.0
         
+    # Intent-Weighted Keyword Multiplier (1.5x)
+    if target_ix and target_ix in INTENT_KEYWORDS:
+        intent_kws = INTENT_KEYWORDS[target_ix]
+        text_lower = (card.get("oracle_text", "") + " " + card.get("type_line", "")).lower()
+        if any(re.search(rf"\b{re.escape(kw)}\b", text_lower) for kw in intent_kws):
+            total_score *= 1.5
+        
     return total_score, satisfies_deep_cut
 
 
@@ -353,6 +401,7 @@ def generate_deck(
     commander_name: str,
     collection_cards: list[str],
     oracle_db: dict,
+    intent_profile: dict = None,
     target_lands: int = 37,
     target_ramp: int = 10,
     target_draw: int = 10,
@@ -370,6 +419,11 @@ def generate_deck(
     # Extract keywords
     comm_keywords = extract_commander_keywords(commander)
     obscurity_db = oracle_db.get("_obscurity_db", {})
+
+    # Set up default intent profile if missing
+    if not intent_profile:
+        intent_profile = {"target_ix": "Aggro-Combat", "bracket_level": 2, "win_cons_needed": 3}
+    target_ix = intent_profile.get("target_ix", "Aggro-Combat")
 
     # Filter collection to valid card identities & map to oracle records
     valid_pool = []
@@ -392,7 +446,7 @@ def generate_deck(
     pool_scored = []
     card_spice_data = {}
     for card in valid_pool:
-        score, deep_cut = calculate_spice_score(card, commander, comm_keywords, obscurity_db)
+        score, deep_cut = calculate_spice_score(card, commander, comm_keywords, obscurity_db, target_ix)
         pool_scored.append((card, score))
         card_spice_data[card["name"].lower()] = (score, deep_cut)
 
@@ -497,7 +551,6 @@ def generate_deck(
     table_pressure_score = min(len(scaling_spells) * 10, 100)
 
     # 3. Hypergeometric Draw Consistency
-    # Joint draw probability of >= 3 Lands, >= 1 Ramp, >= 1 Draw by Turn 6 (drawing 13 cards)
     K_lands = len(selected_lands)
     K_ramp = len(selected_ramp)
     K_draw = len(selected_draw)
@@ -510,6 +563,39 @@ def generate_deck(
         consistency_rating = "Medium Consistency"
     else:
         consistency_rating = "Low Consistency"
+
+    # --- INTENTIONAL EXPERIENCE (IX) METRICS ---
+    # 1. Bracket Check
+    bracket_level = intent_profile.get("bracket_level", 2)
+    deck_card_names = {c["name"].lower() for c in all_non_lands}
+    
+    fast_mana_found = FAST_MANA_CARDS.intersection(deck_card_names)
+    tutors_found = HIGH_EFFICIENCY_TUTORS.intersection(deck_card_names)
+    
+    bracket_warnings = []
+    
+    # Spell Average CMC calculation
+    spells_cmc = sum(c.get("cmc", 0) for c in all_non_lands)
+    avg_cmc = (spells_cmc / len(all_non_lands)) if all_non_lands else 0.0
+
+    if bracket_level in (1, 2):
+        if fast_mana_found:
+            bracket_warnings.append(f"[!] Warning: Fast mana ({', '.join(sorted(list(fast_mana_found)))}) detected in low power Bracket {bracket_level}.")
+        if tutors_found:
+            bracket_warnings.append(f"[!] Warning: High efficiency tutors ({', '.join(sorted(list(tutors_found)))}) detected in low power Bracket {bracket_level}.")
+    elif bracket_level == 4:
+        if avg_cmc > 2.2:
+            bracket_warnings.append(f"[!] Warning: Spell Average CMC is high ({avg_cmc:.2f}) for Bracket 4 (cEDH target < 2.2).")
+        if not fast_mana_found and not tutors_found:
+            bracket_warnings.append("[!] Warning: No fast mana or tutors found; deck is too slow for Bracket 4 (cEDH).")
+
+    # 2. Win-Condition Auditor
+    win_cons_needed = intent_profile.get("win_cons_needed", 3)
+    finishers_found = [c for c in all_non_lands if bool(FINISHER_REGEX.search(c.get("oracle_text", "")))]
+    
+    win_con_warnings = []
+    if len(finishers_found) < win_cons_needed:
+        win_con_warnings.append(f"[!] Warning: Low Win-Condition Density (only {len(finishers_found)}/{win_cons_needed} finishers detected). Risk of becoming a 'Value-Pile'.")
 
     return {
         "commander": commander,
@@ -530,7 +616,14 @@ def generate_deck(
         "table_pressure_score": table_pressure_score,
         "scaling_spells": scaling_spells,
         "joint_prob": joint_prob,
-        "consistency_rating": consistency_rating
+        "consistency_rating": consistency_rating,
+        
+        # IX payload
+        "intent_profile": intent_profile,
+        "bracket_warnings": bracket_warnings,
+        "win_con_warnings": win_con_warnings,
+        "finishers": finishers_found,
+        "avg_cmc": avg_cmc
     }
 
 
@@ -539,12 +632,14 @@ def main():
     parser.add_argument("--commander", required=True, help="Name of the commander to build around")
     parser.add_argument("--collection", default="data/collection_tagged_bulk.csv", help="Path to tagged collection CSV")
     parser.add_argument("--oracle", default="scripts/oracle-cards.json", help="Path to Scryfall oracle cards JSON")
+    parser.add_argument("--intent", default="data/intent_profile.json", help="Path to Intent Profile JSON config")
     parser.add_argument("--output", help="Optional path to output the generated deck list")
     
     args = parser.parse_args()
 
     collection_path = Path(args.collection)
     oracle_path = Path(args.oracle)
+    intent_path = Path(args.intent)
 
     if not collection_path.exists():
         print(f"Error: Collection file does not exist: {collection_path}")
@@ -556,12 +651,14 @@ def main():
     print("Loading databases...")
     oracle_db = load_oracle_database(oracle_path)
     collection = load_collection(collection_path)
+    intent_profile = load_intent_profile(intent_path)
 
     print(f"Loaded {len(oracle_db)} cards from Oracle DB.")
     print(f"Loaded {len(collection)} owned cards from Collection.")
+    print(f"Loaded Intent Profile: {intent_profile.get('target_ix', 'None')} (Bracket {intent_profile.get('bracket_level', 2)}).")
 
     try:
-        deck = generate_deck(args.commander, collection, oracle_db)
+        deck = generate_deck(args.commander, collection, oracle_db, intent_profile)
     except ValueError as e:
         print(e)
         sys.exit(1)
@@ -583,8 +680,6 @@ def main():
     ]
 
     total_cards = 0
-    spells_cmc = 0
-    spells_count = 0
     all_non_lands_instances = []
 
     for title, card_list in categories:
@@ -594,8 +689,6 @@ def main():
             counts[c["name"]] += 1
             total_cards += 1
             if title != "Lands":
-                spells_cmc += c.get("cmc", 0)
-                spells_count += 1
                 all_non_lands_instances.append(c)
         
         for name, count in sorted(counts.items()):
@@ -638,7 +731,6 @@ def main():
     report.append(f"   * Table-Pressure Score: {deck['table_pressure_score']} / 100")
     if deck['scaling_spells']:
         report.append("   * Scaling Cards:")
-        # List unique scaling names
         unique_scaling = sorted(list(set(c["name"] for c in deck["scaling_spells"])))
         for name in unique_scaling:
             report.append(f"     - {name}")
@@ -647,10 +739,37 @@ def main():
     report.append(f"   * Joint Draw Probability (Turn 6): {deck['joint_prob'] * 100:.1f}%")
     report.append(f"   * Consistency Rating: {deck['consistency_rating']}")
 
-    avg_cmc = (spells_cmc / spells_count) if spells_count > 0 else 0.0
+    # Intentional Experience (IX) results
+    report.append("\n==================================================")
+    report.append(" INTENTIONAL EXPERIENCE (IX) REPORT")
+    report.append("==================================================")
+    report.append(f"## Target Playstyle (IX): {deck['intent_profile']['target_ix']}")
+    report.append(f"   * Target Bracket: Bracket {deck['intent_profile']['bracket_level']}")
+    
+    report.append("\n## Power-Level Calibration")
+    if deck['bracket_warnings']:
+        for warning in deck['bracket_warnings']:
+            report.append(f"   {warning}")
+    else:
+        report.append("   * Status: Calibrated (No bracket anomalies found)")
+        
+    report.append("\n## Win-Condition Auditor")
+    report.append(f"   * Finishers Found: {len(deck['finishers'])} (Required: {deck['intent_profile']['win_cons_needed']})")
+    if deck['finishers']:
+        report.append("   * Finishers:")
+        unique_finishers = sorted(list(set(c["name"] for c in deck['finishers'])))
+        for name in unique_finishers:
+            report.append(f"     - {name}")
+            
+    if deck['win_con_warnings']:
+        for warning in deck['win_con_warnings']:
+            report.append(f"   {warning}")
+    else:
+        report.append("   * Status: Balanced Win-Condition Density")
+
     report.append("\n==================================================")
     report.append(f" TOTAL CARDS: {total_cards + 1} (1 Commander + {total_cards} Deck)")
-    report.append(f" Average CMC of Spells: {avg_cmc:.2f}")
+    report.append(f" Average CMC of Spells: {deck['avg_cmc']:.2f}")
     report.append("==================================================")
 
     output_str = "\n".join(report)
