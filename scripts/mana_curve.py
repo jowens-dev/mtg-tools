@@ -32,7 +32,8 @@ def get_resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        # Fallback to the project root directory relative to this script
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     return os.path.join(base_path, relative_path)
 
@@ -103,8 +104,7 @@ class ManaCurveApp:
         self.root.geometry("1050x650")
         
         # Set app icon
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        icon_path = os.path.join(project_root, "assets", "app_icon.png")
+        icon_path = get_resource_path("assets/app_icon.png")
         if os.path.exists(icon_path):
             try:
                 self.icon_img = tk.PhotoImage(file=icon_path)

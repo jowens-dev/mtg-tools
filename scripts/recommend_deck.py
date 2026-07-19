@@ -77,6 +77,7 @@ FINISHER_REGEX = re.compile("|".join(FINISHER_KEYWORDS), re.IGNORECASE)
 
 def load_oracle_database(filepath: Path) -> dict:
     """Load Scryfall oracle cards from a JSON file into a name-keyed lookup dictionary."""
+    filepath = Path(filepath)
     database = {}
     if not filepath.exists():
         print(f"Error: Oracle DB not found at {filepath}", file=sys.stderr)
