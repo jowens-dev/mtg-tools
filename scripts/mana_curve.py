@@ -112,11 +112,17 @@ class ManaCurveApp:
             except Exception as e:
                 print(f"Could not load window icon: {e}", file=sys.stderr)
         
+        self.root.configure(bg="#130924")
+        
         # Configure modern aesthetic styles
         self.style = ttk.Style()
         self.style.theme_use('clam')
-        self.style.configure("TNotebook", background="#F5F5F5")
-        self.style.configure("TNotebook.Tab", font=("Helvetica", 11, "bold"), padding=[10, 5])
+        self.style.configure("TNotebook", background="#130924", borderwidth=0)
+        self.style.configure("TNotebook.Tab", font=("Helvetica", 11, "bold"), padding=[10, 5], background="#251642", foreground="#E9DFFF")
+        self.style.map("TNotebook.Tab", background=[("selected", "#6A4C93")], foreground=[("selected", "white")])
+        self.style.configure("Treeview", background="#251642", foreground="#E9DFFF", fieldbackground="#251642", rowheight=22)
+        self.style.configure("Treeview.Heading", background="#3B2668", foreground="white", font=("Helvetica", 10, "bold"))
+        self.style.map("Treeview", background=[("selected", "#6A4C93")], foreground=[("selected", "white")])
         
         self.oracle_db = load_oracle_database(db_path)
         self.setup_ui()
@@ -126,13 +132,18 @@ class ManaCurveApp:
 
     def setup_ui(self):
         # Left Panel (Deck Input)
-        left_frame = tk.Frame(self.root, padx=15, pady=15, bg="#EAEAEA", width=320)
+        left_frame = tk.Frame(self.root, padx=15, pady=15, bg="#1C0F35", width=320)
         left_frame.pack(side=tk.LEFT, fill=tk.Y)
         left_frame.pack_propagate(False)
         
-        tk.Label(left_frame, text="Paste Decklist Here:", font=("Helvetica", 12, "bold"), bg="#EAEAEA").pack(anchor=tk.W)
+        tk.Label(left_frame, text="Paste Decklist Here:", font=("Helvetica", 12, "bold"), bg="#1C0F35", fg="#BB8FDF").pack(anchor=tk.W)
         
-        self.text_area = tk.Text(left_frame, width=32, height=28, font=("Courier", 10))
+        self.text_area = tk.Text(
+            left_frame, width=32, height=28, font=("Courier", 10),
+            bg="#100522", fg="#E9DFFF", insertbackground="white",
+            selectbackground="#6A4C93", selectforeground="white",
+            bd=0, highlightthickness=1, highlightbackground="#3B2668"
+        )
         self.text_area.pack(pady=5, fill=tk.BOTH, expand=True)
         
         # Set a default test deck (Kozilek Theme / Colorless & general spells)
@@ -169,8 +180,9 @@ class ManaCurveApp:
         
         calc_btn = tk.Button(
             left_frame, text="Analyze Deck", command=self.calculate_and_draw,
-            bg="#2980B9", fg="black", font=("Helvetica", 12, "bold"),
-            relief=tk.FLAT, bd=0, height=2
+            bg="#6A4C93", fg="white", font=("Helvetica", 12, "bold"),
+            activebackground="#7B2CBF", activeforeground="white",
+            highlightbackground="#1C0F35", relief=tk.FLAT, bd=0, height=2
         )
         calc_btn.pack(fill=tk.X, pady=10)
         
@@ -179,27 +191,27 @@ class ManaCurveApp:
         self.notebook.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # TAB 1: Mana Curve & Themes
-        self.tab_curve = tk.Frame(self.notebook, bg="#F5F5F5", padx=15, pady=15)
+        self.tab_curve = tk.Frame(self.notebook, bg="#130924", padx=15, pady=15)
         self.notebook.add(self.tab_curve, text="Mana Curve & Themes")
         
-        tk.Label(self.tab_curve, text="Mana Curve Visualizer", font=("Helvetica", 14, "bold"), bg="#F5F5F5").pack(anchor=tk.N)
+        tk.Label(self.tab_curve, text="Mana Curve Visualizer", font=("Helvetica", 14, "bold"), bg="#130924", fg="#BB8FDF").pack(anchor=tk.N)
         
-        self.stats_label = tk.Label(self.tab_curve, text="Deck Stats will appear here", font=("Helvetica", 11), bg="#F5F5F5")
-        self.stats_label.pack(pady=5)
+        self.stats_label = tk.Label(self.tab_curve, text="Deck Stats will appear here", font=("Helvetica", 11), bg="#130924", fg="#E9DFFF")
+        self.stats_label.pack(pady=2)
         
-        self.theme_label = tk.Label(self.tab_curve, text="Top Themes: None", font=("Helvetica", 10, "italic"), fg="#555555", bg="#F5F5F5")
+        self.theme_label = tk.Label(self.tab_curve, text="Top Themes: None", font=("Helvetica", 10, "italic"), fg="#BB8FDF", bg="#130924")
         self.theme_label.pack(pady=2)
         
-        self.cohesion_label = tk.Label(self.tab_curve, text="Theme Cohesion Score: -", font=("Helvetica", 11, "bold"), fg="#2C3E50", bg="#F5F5F5")
+        self.cohesion_label = tk.Label(self.tab_curve, text="Theme Cohesion Score: -", font=("Helvetica", 11, "bold"), fg="white", bg="#130924")
         self.cohesion_label.pack(pady=2)
         
-        self.flavor_label = tk.Label(self.tab_curve, text="Flavor Profile: -", font=("Helvetica", 10), fg="#555555", bg="#F5F5F5")
+        self.flavor_label = tk.Label(self.tab_curve, text="Flavor Profile: -", font=("Helvetica", 10), fg="#E9DFFF", bg="#130924")
         self.flavor_label.pack(pady=2)
         
-        self.canvas = tk.Canvas(self.tab_curve, bg="white", width=620, height=280, highlightthickness=1, highlightbackground="#CCCCCC")
+        self.canvas = tk.Canvas(self.tab_curve, bg="#1A0D30", width=620, height=280, highlightthickness=1, highlightbackground="#3B2668")
         self.canvas.pack(pady=10, fill=tk.BOTH, expand=True)
         
-        tk.Label(self.tab_curve, text="Subtype Clusters", font=("Helvetica", 11, "bold"), bg="#F5F5F5").pack(anchor=tk.W)
+        tk.Label(self.tab_curve, text="Subtype Clusters", font=("Helvetica", 11, "bold"), bg="#130924", fg="#BB8FDF").pack(anchor=tk.W)
         self.tree = ttk.Treeview(self.tab_curve, columns=("Theme", "Count"), show='headings', height=5)
         self.tree.heading("Theme", text="Subtype / Keyword Theme")
         self.tree.heading("Count", text="Card Count")
@@ -208,84 +220,97 @@ class ManaCurveApp:
         self.tree.pack(pady=5, fill=tk.X)
 
         # TAB 2: Stress-Tester Dashboard
-        self.tab_stress = tk.Frame(self.notebook, bg="#F5F5F5", padx=15, pady=15)
+        self.tab_stress = tk.Frame(self.notebook, bg="#130924", padx=15, pady=15)
         self.notebook.add(self.tab_stress, text="Stress-Tester Dashboard")
         
-        tk.Label(self.tab_stress, text="Engine Stress-Tester", font=("Helvetica", 14, "bold"), bg="#F5F5F5").pack(anchor=tk.N, pady=(0, 15))
+        tk.Label(self.tab_stress, text="Engine Stress-Tester", font=("Helvetica", 14, "bold"), bg="#130924", fg="#BB8FDF").pack(anchor=tk.N, pady=(0, 15))
         
         # Inner columns layout for Tab 2
-        columns_frame = tk.Frame(self.tab_stress, bg="#F5F5F5")
+        columns_frame = tk.Frame(self.tab_stress, bg="#130924")
         columns_frame.pack(fill=tk.BOTH, expand=True)
         
         # Left Column: Fragility & Consistency
-        left_col = tk.Frame(columns_frame, bg="#F5F5F5")
+        left_col = tk.Frame(columns_frame, bg="#130924")
         left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
         # 1. Fragility Indexing Frame
-        self.fragility_card = tk.LabelFrame(left_col, text=" 1. Fragility Indexing ", font=("Helvetica", 11, "bold"), padx=10, pady=10, bg="#FFFFFF", fg="#2C3E50")
+        self.fragility_card = tk.LabelFrame(
+            left_col, text=" 1. Fragility Indexing ", font=("Helvetica", 11, "bold"),
+            padx=10, pady=10, bg="#251642", fg="#BB8FDF", highlightbackground="#3B2668"
+        )
         self.fragility_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        self.frag_rating_label = tk.Label(self.fragility_card, text="Rating: -", font=("Helvetica", 12, "bold"), bg="#FFFFFF")
+        self.frag_rating_label = tk.Label(self.fragility_card, text="Rating: -", font=("Helvetica", 12, "bold"), bg="#251642", fg="white")
         self.frag_rating_label.pack(anchor=tk.W, pady=2)
         
-        self.frag_score_label = tk.Label(self.fragility_card, text="Adjusted Score: -", font=("Helvetica", 10), bg="#FFFFFF")
+        self.frag_score_label = tk.Label(self.fragility_card, text="Adjusted Score: -", font=("Helvetica", 10), bg="#251642", fg="#E9DFFF")
         self.frag_score_label.pack(anchor=tk.W, pady=2)
         
         self.frag_breakdown_label = tk.Label(
             self.fragility_card, text="Creatures: 0 | Artifacts: 0 | Enchantments: 0 | Planeswalkers: 0",
-            font=("Helvetica", 9), fg="#555555", bg="#FFFFFF"
+            font=("Helvetica", 9), fg="#E9DFFF", bg="#251642"
         )
         self.frag_breakdown_label.pack(anchor=tk.W, pady=2)
         
-        self.frag_protect_label = tk.Label(self.fragility_card, text="Protection Spells: 0", font=("Helvetica", 9), fg="#555555", bg="#FFFFFF")
+        self.frag_protect_label = tk.Label(self.fragility_card, text="Protection Spells: 0", font=("Helvetica", 9), fg="#E9DFFF", bg="#251642")
         self.frag_protect_label.pack(anchor=tk.W, pady=2)
         
         self.frag_warn_label = tk.Label(
             self.fragility_card, text="[!] WARNING: High risk of disruption. Add protection.",
-            font=("Helvetica", 9, "bold"), fg="#E24A4A", bg="#FFFFFF"
+            font=("Helvetica", 9, "bold"), fg="#E24A4A", bg="#251642"
         )
         # Hidden by default
         self.frag_warn_label.pack_forget()
 
         # 3. Consistency Frame
-        self.consistency_card = tk.LabelFrame(left_col, text=" 3. Engine Consistency ", font=("Helvetica", 11, "bold"), padx=10, pady=10, bg="#FFFFFF", fg="#2C3E50")
+        self.consistency_card = tk.LabelFrame(
+            left_col, text=" 3. Engine Consistency ", font=("Helvetica", 11, "bold"),
+            padx=10, pady=10, bg="#251642", fg="#BB8FDF", highlightbackground="#3B2668"
+        )
         self.consistency_card.pack(fill=tk.BOTH, expand=True)
         
-        self.const_prob_label = tk.Label(self.consistency_card, text="Draw Probability (Turn 6): -", font=("Helvetica", 12, "bold"), bg="#FFFFFF")
+        self.const_prob_label = tk.Label(self.consistency_card, text="Draw Probability (Turn 6): -", font=("Helvetica", 12, "bold"), bg="#251642", fg="white")
         self.const_prob_label.pack(anchor=tk.W, pady=2)
         
-        self.const_rating_label = tk.Label(self.consistency_card, text="Rating: -", font=("Helvetica", 10, "bold"), bg="#FFFFFF")
+        self.const_rating_label = tk.Label(self.consistency_card, text="Rating: -", font=("Helvetica", 10, "bold"), bg="#251642", fg="white")
         self.const_rating_label.pack(anchor=tk.W, pady=2)
         
         self.const_breakdown_label = tk.Label(
             self.consistency_card, text="Lands: 0/37 | Ramp Spells: 0/10 | Draw Spells: 0/10",
-            font=("Helvetica", 9), fg="#555555", bg="#FFFFFF"
+            font=("Helvetica", 9), fg="#E9DFFF", bg="#251642"
         )
         self.const_breakdown_label.pack(anchor=tk.W, pady=2)
         
         # Right Column: Multiplayer Table-Pressure
-        right_col = tk.Frame(columns_frame, bg="#F5F5F5")
+        right_col = tk.Frame(columns_frame, bg="#130924")
         right_col.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
         
         # 2. Table-Pressure Frame
-        self.pressure_card = tk.LabelFrame(right_col, text=" 2. Multiplayer Table-Pressure ", font=("Helvetica", 11, "bold"), padx=10, pady=10, bg="#FFFFFF", fg="#2C3E50")
+        self.pressure_card = tk.LabelFrame(
+            right_col, text=" 2. Multiplayer Table-Pressure ", font=("Helvetica", 11, "bold"),
+            padx=10, pady=10, bg="#251642", fg="#BB8FDF", highlightbackground="#3B2668"
+        )
         self.pressure_card.pack(fill=tk.BOTH, expand=True)
         
-        self.pressure_score_label = tk.Label(self.pressure_card, text="Table-Pressure Score: -", font=("Helvetica", 12, "bold"), bg="#FFFFFF")
+        self.pressure_score_label = tk.Label(self.pressure_card, text="Table-Pressure Score: -", font=("Helvetica", 12, "bold"), bg="#251642", fg="white")
         self.pressure_score_label.pack(anchor=tk.W, pady=2)
         
         # Custom Canvas Progress Bar
-        self.pressure_canvas = tk.Canvas(self.pressure_card, bg="#FFFFFF", width=280, height=25, highlightthickness=0)
+        self.pressure_canvas = tk.Canvas(self.pressure_card, bg="#1A0D30", width=280, height=25, highlightthickness=0)
         self.pressure_canvas.pack(anchor=tk.W, pady=5)
         
-        tk.Label(self.pressure_card, text="Scaling Multiplayer Spells:", font=("Helvetica", 10, "bold"), bg="#FFFFFF").pack(anchor=tk.W, pady=(10, 2))
+        tk.Label(self.pressure_card, text="Scaling Multiplayer Spells:", font=("Helvetica", 10, "bold"), bg="#251642", fg="#BB8FDF").pack(anchor=tk.W, pady=(10, 2))
         
         # Scrollable listbox for multiplayer scaling cards
-        list_frame = tk.Frame(self.pressure_card, bg="#FFFFFF")
+        list_frame = tk.Frame(self.pressure_card, bg="#251642")
         list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
         scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL)
-        self.scaling_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, font=("Helvetica", 9), relief=tk.FLAT, height=12)
+        self.scaling_listbox = tk.Listbox(
+            list_frame, yscrollcommand=scrollbar.set, font=("Helvetica", 9),
+            bg="#100522", fg="#E9DFFF", selectbackground="#6A4C93", selectforeground="white",
+            relief=tk.FLAT, bd=0, height=12
+        )
         scrollbar.config(command=self.scaling_listbox.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.scaling_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -487,7 +512,7 @@ class ManaCurveApp:
             
         # Draw table-pressure gauge / progress bar
         self.pressure_canvas.delete("all")
-        self.pressure_canvas.create_rectangle(0, 0, 280, 25, fill="#E0E0E0", outline="")
+        self.pressure_canvas.create_rectangle(0, 0, 280, 25, fill="#100522", outline="")
         
         fill_color = "#27AE60"
         if table_pressure_score >= 70:
@@ -500,7 +525,7 @@ class ManaCurveApp:
             self.pressure_canvas.create_rectangle(0, 0, fill_w, 25, fill=fill_color, outline="")
         self.pressure_canvas.create_text(
             140, 12, text=f"{table_pressure_score}%", font=("Helvetica", 10, "bold"),
-            fill="black" if table_pressure_score < 60 else "white"
+            fill="white"
         )
         
         # 3. Engine Consistency Calculations
@@ -551,8 +576,8 @@ class ManaCurveApp:
                 self.canvas.create_rectangle(x0, current_y_top, x1, current_y_bottom, fill=color_hex, outline="black")
                 current_y_bottom = current_y_top 
             
-            self.canvas.create_text((x0 + x1)/2, c_height - padding_y + 15, text=str(mana), font=("Helvetica", 10, "bold"), fill="black")
-            self.canvas.create_text((x0 + x1)/2, current_y_bottom - 10, text=str(total_in_slot), font=("Helvetica", 10), fill="black")
+            self.canvas.create_text((x0 + x1)/2, c_height - padding_y + 15, text=str(mana), font=("Helvetica", 10, "bold"), fill="#E9DFFF")
+            self.canvas.create_text((x0 + x1)/2, current_y_bottom - 10, text=str(total_in_slot), font=("Helvetica", 10), fill="#E9DFFF")
 
 
 if __name__ == "__main__":
