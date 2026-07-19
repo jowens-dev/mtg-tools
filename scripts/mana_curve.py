@@ -178,13 +178,15 @@ class ManaCurveApp:
             "1 Soul of New Phyrexia"
         )
         
-        calc_btn = tk.Button(
-            left_frame, text="Analyze Deck", command=self.calculate_and_draw,
+        self.calc_btn = tk.Label(
+            left_frame, text="Analyze Deck",
             bg="#6A4C93", fg="white", font=("Helvetica", 12, "bold"),
-            activebackground="#7B2CBF", activeforeground="white",
-            highlightbackground="#1C0F35", relief=tk.FLAT, bd=0, height=2
+            relief=tk.FLAT, bd=0, height=2, cursor="hand2"
         )
-        calc_btn.pack(fill=tk.X, pady=10)
+        self.calc_btn.pack(fill=tk.X, pady=10)
+        self.calc_btn.bind("<Button-1>", lambda e: self.calculate_and_draw())
+        self.calc_btn.bind("<Enter>", lambda e: self.calc_btn.configure(bg="#7B2CBF"))
+        self.calc_btn.bind("<Leave>", lambda e: self.calc_btn.configure(bg="#6A4C93"))
         
         # Right Panel (Notebook containing Tabs)
         self.notebook = ttk.Notebook(self.root)
