@@ -640,7 +640,8 @@ MECHANICAL_THEMES = {
     "Spellslinger": [r"whenever you cast an instant or sorcery", r"instant or sorcery spell", r"magecraft"],
     "Artifacts / Voltron": [r"artifact", r"equip", r"enchant creature", r"aura", r"vehicles"],
     "Lifegain": [r"gain life", r"whenever you gain life", r"lifelink"],
-    "Discard / Madness": [r"discard", r"cycling", r"madness"]
+    "Discard / Madness": [r"discard", r"cycling", r"madness"],
+    "Planeswalkers / Superfriends": [r"\bplaneswalker\b", r"\bloyalty\b"]
 }
 
 MECHANICAL_REGEXES = {
