@@ -20,7 +20,9 @@ from recommend_deck import (
     is_draw,
     is_protection,
     is_multiplayer_scaling,
-    calculate_fragility_weight
+    calculate_fragility_weight,
+    calculate_cohesion_score,
+    analyze_flavor_clashes
 )
 from math_utils import calculate_joint_consistency
 
@@ -97,8 +99,18 @@ def parse_decklist_text(text: str) -> list[str]:
 class ManaCurveApp:
     def __init__(self, root, db_path):
         self.root = root
-        self.root.title("MTG Deck Stress-Tester & Visualizer")
+        self.root.title("Loreweaver - MTG Thematic Deck Companion")
         self.root.geometry("1050x650")
+        
+        # Set app icon
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        icon_path = os.path.join(project_root, "assets", "app_icon.png")
+        if os.path.exists(icon_path):
+            try:
+                self.icon_img = tk.PhotoImage(file=icon_path)
+                self.root.iconphoto(True, self.icon_img)
+            except Exception as e:
+                print(f"Could not load window icon: {e}", file=sys.stderr)
         
         # Configure modern aesthetic styles
         self.style = ttk.Style()
@@ -177,6 +189,12 @@ class ManaCurveApp:
         
         self.theme_label = tk.Label(self.tab_curve, text="Top Themes: None", font=("Helvetica", 10, "italic"), fg="#555555", bg="#F5F5F5")
         self.theme_label.pack(pady=2)
+        
+        self.cohesion_label = tk.Label(self.tab_curve, text="Theme Cohesion Score: -", font=("Helvetica", 11, "bold"), fg="#2C3E50", bg="#F5F5F5")
+        self.cohesion_label.pack(pady=2)
+        
+        self.flavor_label = tk.Label(self.tab_curve, text="Flavor Profile: -", font=("Helvetica", 10), fg="#555555", bg="#F5F5F5")
+        self.flavor_label.pack(pady=2)
         
         self.canvas = tk.Canvas(self.tab_curve, bg="white", width=620, height=280, highlightthickness=1, highlightbackground="#CCCCCC")
         self.canvas.pack(pady=10, fill=tk.BOTH, expand=True)
@@ -286,8 +304,6 @@ class ManaCurveApp:
 
         # Fetch Type Clusters
         type_clusters = cluster_deck_by_type(deck_names, self.oracle_db)
-        for theme, count in type_clusters:
-            self.tree.insert("", "end", values=(theme, count))
             
         lands_count = 0
         spells_count = 0
@@ -373,6 +389,55 @@ class ManaCurveApp:
         combined_themes = macro_themes + flavor_types
         top_themes = ", ".join(combined_themes[:4]) if combined_themes else "None"
         self.theme_label.config(text=f"Top Themes: {top_themes}")
+        
+        # Thematic Cohesion & Flavor Analysis
+        cohesion_info = calculate_cohesion_score(deck_names, self.oracle_db)
+        flavor_info = analyze_flavor_clashes(deck_names, self.oracle_db)
+
+        # Update Cohesion score & Label color
+        score = cohesion_info["cohesion_score"]
+        if score >= 75:
+            cohesion_color = "#27AE60" # Green
+            cohesion_desc = "Excellent"
+        elif score >= 50:
+            cohesion_color = "#E67E22" # Orange
+            cohesion_desc = "Moderate"
+        else:
+            cohesion_color = "#E24A4A" # Red
+            cohesion_desc = "Low Cohesion"
+        self.cohesion_label.config(
+            text=f"Theme Cohesion Score: {score}/100 ({cohesion_desc})",
+            fg=cohesion_color
+        )
+
+        # Update Flavor clash labels
+        clashes = flavor_info["clashing_cards"]
+        if clashes:
+            clash_names = ", ".join(c["card"].title() for c in clashes[:2])
+            clash_suffix = f" (Outliers: {clash_names})" if len(clashes) <= 2 else f" (Outliers: {clash_names} +{len(clashes)-2} more)"
+            self.flavor_label.config(
+                text=f"Flavor Profile: {flavor_info['dominant_plane']} centric | Vorthos Clash{clash_suffix}",
+                fg="#E24A4A"
+            )
+        else:
+            self.flavor_label.config(
+                text=f"Flavor Profile: {flavor_info['dominant_plane']} centric (Cohesive)",
+                fg="#27AE60"
+            )
+
+        # Also, let's update the treeview (Subtype Clusters table) to show both creature subtypes AND mechanical themes!
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+
+        # Insert Creature Subtypes Header
+        self.tree.insert("", "end", values=("--- Creature Types ---", ""))
+        for subtype, count in cohesion_info["subtype_counts"].items():
+            self.tree.insert("", "end", values=(f"  {subtype.title()}", count))
+
+        # Insert Mechanical Themes Header
+        self.tree.insert("", "end", values=("--- Mechanical Themes ---", ""))
+        for theme, count in cohesion_info["theme_counts"].items():
+            self.tree.insert("", "end", values=(f"  {theme}", count))
             
         self.draw_chart(curve_data)
         

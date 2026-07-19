@@ -1,6 +1,6 @@
-# MTG tools
+# Loreweaver
 
-This workspace contains a small Python pipeline for turning a canonical MTG inventory CSV into a color-tagged inventory file that can be used for gauntlet building and other card-selection workflows.
+**Loreweaver** is a thematic deck companion and analysis tool for Magic: The Gathering (MTG). This workspace contains a pipeline and dashboard for analyzing mechanical synergy, thematic cohesion, color identities, and card selection workflows.
 
 ## Files
 
@@ -15,7 +15,7 @@ python3 scripts/tag_color_identity.py /path/to/mtg_canonical_inventory.csv /path
 
 The script expects the inventory CSV to contain a card-name column such as `Card Name` or `card_name`.
 
-MTG Thematic Deck Companion - Dependency Map
+Loreweaver - Dependency Map
 
 Core Philosophy: This is NOT an EDHREC clone. This app analyzes the flavor, theme, and mechanical synergy of a deck, not just raw play-rates.
 

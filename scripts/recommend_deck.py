@@ -627,6 +627,174 @@ def generate_deck(
     }
 
 
+# --- THEMATIC ENGINE FUNCTIONS (Layer 4) ---
+
+MECHANICAL_THEMES = {
+    "Landfall / Lands": [r"landfall", r"whenever a land enters", r"play an additional land"],
+    "Sacrifice / Aristocrats": [r"sacrifice a", r"whenever a.*dies", r"die, you", r"aristocrat"],
+    "Graveyard / Reanimator": [r"graveyard", r"return.*from your graveyard", r"reanimate", r"dredge", r"undergrowth"],
+    "Blink / Flicker": [r"exile.*then return.*to the battlefield", r"flicker", r"blink", r"enters the battlefield again"],
+    "Tokens": [r"create.*token", r"populate", r"amass"],
+    "Counters (+1/+1 / Proliferate)": [r"\+1/\+1 counter", r"proliferate", r"doubling season", r"hardened scales"],
+    "Spellslinger": [r"whenever you cast an instant or sorcery", r"instant or sorcery spell", r"magecraft"],
+    "Artifacts / Voltron": [r"artifact", r"equip", r"enchant creature", r"aura", r"vehicles"],
+    "Lifegain": [r"gain life", r"whenever you gain life", r"lifelink"],
+    "Discard / Madness": [r"discard", r"cycling", r"madness"]
+}
+
+MECHANICAL_REGEXES = {
+    theme: re.compile("|".join(patterns), re.IGNORECASE)
+    for theme, patterns in MECHANICAL_THEMES.items()
+}
+
+SET_TO_PLANE = {
+    # Innistrad (Gothic horror, vampires, werewolves)
+    "isd": "Innistrad", "dka": "Innistrad", "avr": "Innistrad", "soi": "Innistrad", "emn": "Innistrad", "mid": "Innistrad", "vow": "Innistrad",
+    # Kamigawa (Cyberpunk / Traditional Japanese)
+    "chk": "Kamigawa", "bok": "Kamigawa", "sok": "Kamigawa", "neo": "Kamigawa",
+    # Ravnica (Guild metropolis)
+    "rav": "Ravnica", "gpt": "Ravnica", "dis": "Ravnica", "rtr": "Ravnica", "gtc": "Ravnica", "dgm": "Ravnica", "grn": "Ravnica", "rna": "Ravnica", "war": "Ravnica", "mkm": "Ravnica",
+    # Mirrodin / New Phyrexia (Metal world)
+    "mrd": "Mirrodin", "dst": "Mirrodin", "5dn": "Mirrodin", "som": "Mirrodin", "mbs": "Mirrodin", "nph": "Mirrodin", "one": "Mirrodin",
+    # Zendikar (Adventure, elements, lands)
+    "zen": "Zendikar", "wwk": "Zendikar", "roe": "Zendikar", "bfz": "Zendikar", "ogw": "Zendikar", "znr": "Zendikar",
+    # Dominaria (High fantasy, history)
+    "dom": "Dominaria", "dmu": "Dominaria", "bro": "Dominaria",
+    # Theros (Greek myth, enchantments)
+    "ths": "Theros", "bng": "Theros", "jou": "Theros", "thb": "Theros",
+    # Eldraine (Fairy tales, knights)
+    "eld": "Eldraine", "woe": "Eldraine",
+    # Ixalan (Dinosaurs, Mesoamerican, pirates)
+    "xln": "Ixalan", "rix": "Ixalan", "lci": "Ixalan"
+}
+
+PLANE_CLASHES = {
+    "Kamigawa": {"Innistrad", "Eldraine", "Theros"},
+    "Innistrad": {"Kamigawa", "Kaladesh"},
+    "Eldraine": {"Kamigawa", "Mirrodin"},
+    "Mirrodin": {"Eldraine", "Theros", "Ixalan"},
+    "Theros": {"Kamigawa", "Mirrodin"},
+    "Ixalan": {"Mirrodin", "Kamigawa"}
+}
+
+def scan_mechanical_keywords(card_info: dict) -> list[str]:
+    """Scan card's oracle text and types to identify matching mechanical themes."""
+    matched_themes = []
+    text = card_info.get("oracle_text", "")
+    type_line = card_info.get("type_line", "")
+    
+    # Check type line for simple theme matches (e.g., 'Artifact' type)
+    for theme, regex in MECHANICAL_REGEXES.items():
+        if regex.search(text) or regex.search(type_line):
+            matched_themes.append(theme)
+            
+    return matched_themes
+
+def calculate_cohesion_score(deck_names: list, db: dict) -> dict:
+    """
+    Calculate the Theme Cohesion Score (0-100) based on creature subtypes
+    and mechanical keywords.
+    """
+    spells_count = 0
+    creatures_count = 0
+    subtype_counts = defaultdict(int)
+    theme_counts = defaultdict(int)
+    
+    for name in deck_names:
+        card_info = db.get(name.lower())
+        if not card_info:
+            continue
+        
+        # We only look at non-land spells for mechanical cohesion
+        raw_type = card_info.get("raw_type", "").lower()
+        if "land" in raw_type and "creature" not in raw_type:
+            continue
+            
+        spells_count += 1
+        
+        # Subtype counts
+        if "creature" in raw_type:
+            creatures_count += 1
+            for sub in card_info.get("subtypes", []):
+                subtype_counts[sub] += 1
+                
+        # Mechanical themes counts
+        matched = scan_mechanical_keywords(card_info)
+        for theme in matched:
+            theme_counts[theme] += 1
+            
+    # Find dominant subtype (creature type) density
+    max_subtype_count = max(subtype_counts.values()) if subtype_counts else 0
+    dominant_subtype = max(subtype_counts, key=subtype_counts.get) if subtype_counts else "None"
+    subtype_density = (max_subtype_count / creatures_count) * 100 if creatures_count > 0 else 0
+    
+    # Find dominant mechanical theme density
+    max_theme_count = max(theme_counts.values()) if theme_counts else 0
+    dominant_theme = max(theme_counts, key=theme_counts.get) if theme_counts else "None"
+    theme_density = (max_theme_count / spells_count) * 100 if spells_count > 0 else 0
+    
+    # Cohesion formula:
+    # Blend dominant creature type density (weighted 40%) and mechanical theme density (weighted 60%)
+    # If the deck has few creatures (e.g. spellslinger), we rely entirely on the mechanical theme density.
+    if creatures_count < 10:
+        cohesion_score = min(100, theme_density * 1.5)
+    else:
+        cohesion_score = min(100, (subtype_density * 0.4) + (theme_density * 0.9))
+        
+    return {
+        "cohesion_score": int(cohesion_score),
+        "dominant_subtype": dominant_subtype,
+        "subtype_density": int(subtype_density),
+        "dominant_theme": dominant_theme,
+        "theme_density": int(theme_density),
+        "subtype_counts": dict(sorted(subtype_counts.items(), key=lambda x: x[1], reverse=True)[:5]),
+        "theme_counts": dict(sorted(theme_counts.items(), key=lambda x: x[1], reverse=True)[:5])
+    }
+
+def analyze_flavor_clashes(deck_names: list, db: dict) -> dict:
+    """
+    Analyze the deck for Vorthos flavor clashes based on sets/planes of origin.
+    """
+    plane_counts = defaultdict(int)
+    card_planes = {}
+    
+    for name in deck_names:
+        card_info = db.get(name.lower())
+        if not card_info:
+            continue
+            
+        set_code = card_info.get("set", "").lower()
+        plane = SET_TO_PLANE.get(set_code)
+        if plane:
+            plane_counts[plane] += 1
+            card_planes[card_info["name"]] = plane
+            
+    if not plane_counts:
+        return {"dominant_plane": "Unknown", "clashing_cards": []}
+        
+    dominant_plane = max(plane_counts, key=plane_counts.get)
+    dominant_plane_count = plane_counts[dominant_plane]
+    
+    clashing_cards = []
+    # We only run clash warning if the deck has a strong plane thematic presence (>= 4 cards from dominant plane)
+    if dominant_plane_count >= 4:
+        forbidden_planes = PLANE_CLASHES.get(dominant_plane, set())
+        for card_name, plane in card_planes.items():
+            if plane in forbidden_planes:
+                clashing_cards.append({
+                    "card": card_name,
+                    "card_plane": plane,
+                    "dominant_plane": dominant_plane
+                })
+                
+    return {
+        "dominant_plane": dominant_plane,
+        "dominant_plane_count": dominant_plane_count,
+        "plane_counts": dict(plane_counts),
+        "clashing_cards": clashing_cards
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate an objective MTG Commander deck from your tagged collection.")
     parser.add_argument("--commander", required=True, help="Name of the commander to build around")
