@@ -772,14 +772,14 @@ def analyze_flavor_clashes(deck_names: list, db: dict) -> dict:
             card_planes[card_info["name"]] = plane
             
     if not plane_counts:
-        return {"dominant_plane": "Unknown", "clashing_cards": []}
+        return {"dominant_plane": "Unknown", "dominant_plane_count": 0, "clashing_cards": []}
         
     dominant_plane = max(plane_counts, key=plane_counts.get)
     dominant_plane_count = plane_counts[dominant_plane]
     
     clashing_cards = []
-    # We only run clash warning if the deck has a strong plane thematic presence (>= 4 cards from dominant plane)
-    if dominant_plane_count >= 4:
+    # We only run clash warning if the deck has a strong plane thematic presence (>= 8 cards from dominant plane)
+    if dominant_plane_count >= 8:
         forbidden_planes = PLANE_CLASHES.get(dominant_plane, set())
         for card_name, plane in card_planes.items():
             if plane in forbidden_planes:

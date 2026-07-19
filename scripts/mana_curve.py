@@ -412,17 +412,24 @@ class ManaCurveApp:
 
         # Update Flavor clash labels
         clashes = flavor_info["clashing_cards"]
-        if clashes:
-            clash_names = ", ".join(c["card"].title() for c in clashes[:2])
-            clash_suffix = f" (Outliers: {clash_names})" if len(clashes) <= 2 else f" (Outliers: {clash_names} +{len(clashes)-2} more)"
-            self.flavor_label.config(
-                text=f"Flavor Profile: {flavor_info['dominant_plane']} centric | Vorthos Clash{clash_suffix}",
-                fg="#E24A4A"
-            )
+        dominant_count = flavor_info.get("dominant_plane_count", 0)
+        if dominant_count >= 8:
+            if clashes:
+                clash_names = ", ".join(c["card"].title() for c in clashes[:2])
+                clash_suffix = f" (Outliers: {clash_names})" if len(clashes) <= 2 else f" (Outliers: {clash_names} +{len(clashes)-2} more)"
+                self.flavor_label.config(
+                    text=f"Flavor Profile: {flavor_info['dominant_plane']} centric ({dominant_count} cards) | Vorthos Clash{clash_suffix}",
+                    fg="#E24A4A"
+                )
+            else:
+                self.flavor_label.config(
+                    text=f"Flavor Profile: {flavor_info['dominant_plane']} centric ({dominant_count} cards) | Cohesive",
+                    fg="#27AE60"
+                )
         else:
             self.flavor_label.config(
-                text=f"Flavor Profile: {flavor_info['dominant_plane']} centric (Cohesive)",
-                fg="#27AE60"
+                text="Flavor Profile: Diverse (Mixed Planes)",
+                fg="#2C3E50"
             )
 
         # Also, let's update the treeview (Subtype Clusters table) to show both creature subtypes AND mechanical themes!
