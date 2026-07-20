@@ -39,6 +39,7 @@ function App() {
     `1 Soul of New Phyrexia`
   );
   
+  const [hasInteracted, setHasInteracted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
   const [results, setResults] = useState(null);
@@ -227,7 +228,16 @@ function App() {
                 <textarea 
                   className="textarea-input"
                   value={decklist}
-                  onChange={(e) => setDecklist(e.target.value)}
+                  onChange={(e) => {
+                    setDecklist(e.target.value);
+                    setHasInteracted(true);
+                  }}
+                  onFocus={() => {
+                    if (!hasInteracted) {
+                      setDecklist("");
+                      setHasInteracted(true);
+                    }
+                  }}
                   placeholder="1 Sol Ring&#10;1 Mana Crypt..."
                 />
               </div>
@@ -628,7 +638,7 @@ function App() {
           © Wizards of the Coast LLC.
         </p>
         <p style={{ margin: 0, fontWeight: 'bold', color: 'var(--text-white)' }}>
-          🔒 Privacy Guarantee: All deck list analysis is computed locally in your browser. We do not collect, transmit, or store your decklists.
+          🔒 Privacy Notice: Loreweaver is a client-side tool. Your decklists are analyzed locally in your browser and are never saved, tracked, or stored on any server.
         </p>
       </footer>
 
