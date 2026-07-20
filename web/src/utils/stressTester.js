@@ -132,6 +132,12 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
   let enchantmentsCount = 0;
   let planeswalkersCount = 0;
 
+  // Payoff and generator tallies for fodder awareness
+  let tokenGenerators = 0;
+  let tokenPayoffs = 0;
+  let counterGenerators = 0;
+  let counterPayoffs = 0;
+
   const nonLandPerms = [];
   const scalingSpells = [];
 
@@ -157,6 +163,13 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
       if (isMultiplayerScaling(card)) {
         scalingSpells.push(card.name);
       }
+
+      // Count resource generators and payoffs for CDI Fodder Awareness
+      const text = card.oracle_text || "";
+      if (/create.*token/i.test(text)) tokenGenerators++;
+      if (/\bpopulate\b|\btoken\b.*(double|additional|whenever a.*enters)|sacrifice a.*token/i.test(text)) tokenPayoffs++;
+      if (/put.*counter|proliferate/i.test(text)) counterGenerators++;
+      if (/double.*number of.*counter|whenever a.*counter is placed|modified creature/i.test(text)) counterPayoffs++;
 
       const fragWeight = calculateFragilityWeight(card);
       if (fragWeight > 0.0) {
