@@ -56,10 +56,14 @@ function App() {
       // 1. Fetch Commander details dynamically from Scryfall
       let commanderCardInfo = null;
       try {
-        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(commander)}`, {
+        let cleanCommander = commander.trim();
+        const commMatch = cleanCommander.match(/^(\d+)\s+(.+)$/);
+        if (commMatch) {
+          cleanCommander = commMatch[2].trim();
+        }
+        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cleanCommander)}`, {
           headers: {
-            "Accept": "application/json;q=0.9,*/*;q=0.8",
-            "User-Agent": "Loreweaver/1.0"
+            "Accept": "application/json;q=0.9,*/*;q=0.8"
           }
         });
         if (res.ok) {

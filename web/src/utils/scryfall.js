@@ -27,8 +27,7 @@ export async function fetchCardsMetadata(cardNames) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json;q=0.9,*/*;q=0.8",
-          "User-Agent": "Loreweaver/1.0"
+          "Accept": "application/json;q=0.9,*/*;q=0.8"
         },
         body: JSON.stringify(body)
       });
