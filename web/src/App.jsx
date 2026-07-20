@@ -611,6 +611,27 @@ function App() {
         )}
       </main>
 
+      {/* Wizards Fan Content & Privacy Footer */}
+      <footer style={{
+        padding: '16px 24px 80px 24px',
+        fontSize: '0.75rem',
+        color: 'var(--text-accent)',
+        textAlign: 'center',
+        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+        lineHeight: '1.6',
+        backgroundColor: 'rgba(18, 11, 26, 0.3)',
+        marginTop: '20px'
+      }}>
+        <p style={{ margin: '0 0 8px 0' }}>
+          Loreweaver is unofficial Fan Content permitted under the Wizards of the Coast Fan Content Policy. 
+          Not approved or endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. 
+          © Wizards of the Coast LLC.
+        </p>
+        <p style={{ margin: 0, fontWeight: 'bold', color: 'var(--text-white)' }}>
+          🔒 Privacy Guarantee: All deck list analysis is computed locally in your browser. We do not collect, transmit, or store your decklists.
+        </p>
+      </footer>
+
       {/* Bottom Nav tabs bar */}
       <nav className="bottom-nav">
         <button 
