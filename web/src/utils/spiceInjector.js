@@ -22,8 +22,9 @@ export function detectBrokenChains(deckNames, db) {
   let counterGenerators = 0;
   let counterPayoffs = 0;
 
-  let sacGenerators = 0; // Token makers / recursive creatures
-  let sacOutlets = 0;    // Sacrifice outlets / triggers
+  let sacFodder = 0;   // Token makers / recursive creatures
+  let sacOutlets = 0;  // Free sac outlets
+  let sacPayoffs = 0;  // Death triggers
 
   for (const name of deckNames) {
     const card = db[name.toLowerCase()];
@@ -49,11 +50,14 @@ export function detectBrokenChains(deckNames, db) {
     }
 
     // 3. Sacrifice Chain
-    if (/return.*from.*graveyard|create.*token/i.test(text)) {
-      sacGenerators++;
+    if (/create.*token|return.*from.*graveyard|reassemble|recursive|persist|undying/i.test(text)) {
+      sacFodder++;
     }
-    if (/sacrifice a (creature|artifact)|sacrifice outlet|\baristocrat\b/i.test(text)) {
+    if (/sacrifice a (creature|artifact|permanent)/i.test(text)) {
       sacOutlets++;
+    }
+    if (/whenever.*dies|whenever you sacrifice|blood artist|zulaport/i.test(text)) {
+      sacPayoffs++;
     }
   }
 
@@ -98,20 +102,27 @@ export function detectBrokenChains(deckNames, db) {
   }
 
   // Sacrifice check
-  if (sacGenerators + sacOutlets >= 5) {
-    if (sacGenerators < 2) {
+  if (sacFodder + sacOutlets + sacPayoffs >= 5) {
+    if (sacFodder < 2) {
       brokenChains.push({
         theme: "Sacrifice / Aristocrats",
-        reason: "Sacrifice outlets lacking sacrificial fodder (tokens/recursion)",
+        reason: "Sacrifice outlets/payoffs lacking sacrificial fodder (tokens/recursion)",
         missingType: "fodder creator",
         queryKeyword: "create token dies graveyard"
       });
     } else if (sacOutlets < 2) {
       brokenChains.push({
         theme: "Sacrifice / Aristocrats",
-        reason: "Sacrificial fodder lacking sacrifice outlets/triggers",
+        reason: "Sacrificial fodder/payoffs lacking sacrifice outlets (free sac engines)",
         missingType: "sacrifice outlet",
         queryKeyword: "sacrifice a creature"
+      });
+    } else if (sacPayoffs < 2) {
+      brokenChains.push({
+        theme: "Sacrifice / Aristocrats",
+        reason: "Sacrificial fodder/outlets lacking death trigger payoffs",
+        missingType: "payoff trigger",
+        queryKeyword: "whenever a creature dies"
       });
     }
   }

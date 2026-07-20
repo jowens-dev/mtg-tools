@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { fetchCardsMetadata } from './utils/scryfall';
-import { parseDecklistText, calculateCohesionScore, analyzeFlavorClashes, analyzeIntentionalExperience } from './utils/themeEngine';
+import { parseDecklistText, calculateCohesionScore, calculateFlavorProfile, analyzeIntentionalExperience } from './utils/themeEngine';
 import { analyzeStress } from './utils/stressTester';
 import { detectBrokenChains, fetchSpiceRecommendations } from './utils/spiceInjector';
 
@@ -90,7 +90,7 @@ function App() {
       
       // 4. Run theme calculations
       const cohesion = calculateCohesionScore(parsedNames, db);
-      const flavor = analyzeFlavorClashes(parsedNames, db);
+      const flavor = calculateFlavorProfile(parsedNames, db);
       const ix = analyzeIntentionalExperience(parsedNames, db, targetIX, bracket);
       
       // 5. Run stress-tester engine calculations
@@ -324,32 +324,29 @@ function App() {
                   </p>
                 </div>
 
-                {/* Vorthos Flavor Profile card */}
+                {/* Flavor Profile card */}
                 <div className="card">
                   <div className="form-label">Flavor Profile</div>
-                  {results.flavor.dominant_plane_count >= 8 ? (
-                    <div>
-                      <p style={{ fontWeight: 'bold', color: results.flavor.clashing_cards.length > 0 ? 'var(--color-red)' : 'var(--color-green)' }}>
-                        {results.flavor.dominant_plane} Centric ({results.flavor.dominant_plane_count} Cards)
-                        {results.flavor.clashing_cards.length > 0 ? ' | Vorthos Clash Detected' : ' | Flavor Cohesive'}
-                      </p>
-                      
-                      {results.flavor.clashing_cards.length > 0 && (
-                        <div style={{ marginTop: '12px' }}>
-                          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-red)' }}>Outliers:</span>
-                          <div style={{ marginTop: '6px' }}>
-                            {results.flavor.clashing_cards.map((c, i) => (
-                              <div key={i} className="clash-card-item">
-                                <span className="clash-card-name">{c.card}</span> ({c.card_plane} card in a {c.dominant_plane} deck)
-                              </div>
-                            ))}
-                          </div>
+                  <div>
+                    <p style={{ fontWeight: 'bold', color: results.flavor.flavorColor }}>
+                      {results.flavor.flavorRating} ({results.flavor.spiceRatio}% Spice)
+                    </p>
+                    
+                    {results.flavor.spicyCards.length > 0 && (
+                      <div style={{ marginTop: '12px' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-accent)' }}>
+                          Synergistic / Spicy Cards ({results.flavor.spicyCards.length}):
+                        </span>
+                        <div style={{ marginTop: '6px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
+                          {results.flavor.spicyCards.map((c, i) => (
+                            <div key={i} className="clash-card-item" style={{ fontSize: '0.85rem', color: 'var(--text-white)', padding: '2px 0' }}>
+                              ✦ {c}
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p style={{ color: 'var(--text-white)', fontWeight: 'bold' }}>Diverse (Mixed Planes)</p>
-                  )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Theme Breakdowns card */}

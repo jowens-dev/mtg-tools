@@ -66,7 +66,8 @@ export async function fetchCardsMetadata(cardNames) {
             cmc: card.cmc || 0,
             colors: card.colors || [],
             set: card.set || "",
-            image_url: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : ""
+            image_url: card.image_uris ? (card.image_uris.normal || card.image_uris.small) : "",
+            edhrec_rank: card.edhrec_rank
           };
         }
       }

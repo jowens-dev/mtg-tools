@@ -14,35 +14,19 @@ const MECHANICAL_THEMES = {
   "Planeswalkers / Superfriends": [/\bplaneswalker\b/i, /\bloyalty\b/i]
 };
 
-const SET_TO_PLANE = {
-  // Innistrad (Gothic horror, vampires, werewolves)
-  "isd": "Innistrad", "dka": "Innistrad", "avr": "Innistrad", "soi": "Innistrad", "emn": "Innistrad", "mid": "Innistrad", "vow": "Innistrad",
-  // Kamigawa (Cyberpunk / Traditional Japanese)
-  "chk": "Kamigawa", "bok": "Kamigawa", "sok": "Kamigawa", "neo": "Kamigawa",
-  // Ravnica (Guild metropolis)
-  "rav": "Ravnica", "gpt": "Ravnica", "dis": "Ravnica", "rtr": "Ravnica", "gtc": "Ravnica", "dgm": "Ravnica", "grn": "Ravnica", "rna": "Ravnica", "war": "Ravnica", "mkm": "Ravnica",
-  // Mirrodin / New Phyrexia (Metal world)
-  "mrd": "Mirrodin", "dst": "Mirrodin", "5dn": "Mirrodin", "som": "Mirrodin", "mbs": "Mirrodin", "nph": "Mirrodin", "one": "Mirrodin",
-  // Zendikar (Adventure, elements, lands)
-  "zen": "Zendikar", "wwk": "Zendikar", "roe": "Zendikar", "bfz": "Zendikar", "ogw": "Zendikar", "znr": "Zendikar",
-  // Dominaria (High fantasy, history)
-  "dom": "Dominaria", "dmu": "Dominaria", "bro": "Dominaria",
-  // Theros (Greek myth, enchantments)
-  "ths": "Theros", "bng": "Theros", "jou": "Theros", "thb": "Theros",
-  // Eldraine (Fairy tales, knights)
-  "eld": "Eldraine", "woe": "Eldraine",
-  // Ixalan (Dinosaurs, Mesoamerican, pirates)
-  "xln": "Ixalan", "rix": "Ixalan", "lci": "Ixalan"
-};
-
-const PLANE_CLASHES = {
-  "Kamigawa": new Set(["Innistrad", "Eldraine", "Theros"]),
-  "Innistrad": new Set(["Kamigawa", "Kaladesh"]),
-  "Eldraine": new Set(["Kamigawa", "Mirrodin"]),
-  "Mirrodin": new Set(["Eldraine", "Theros", "Ixalan"]),
-  "Theros": new Set(["Kamigawa", "Mirrodin"]),
-  "Ixalan": new Set(["Mirrodin", "Kamigawa"])
-};
+const STAPLES = new Set([
+  "sol ring", "arcane signet", "command tower", "cyclonic rift", "rhystic study", 
+  "smothering tithe", "swords to plowshares", "path to exile", "demonic tutor", 
+  "vampiric tutor", "heroic intervention", "cultivate", "kodama's reach", 
+  "beast within", "chaos warp", "counterspell", "fierce guardianship", 
+  "deflecting swat", "deadly rollick", "flawless maneuver", "teferi's protection", 
+  "swiftfoot boots", "lightning greaves", "skullclamp", "solemn simulacrum", 
+  "eternal witness", "llanowar elves", "birds of paradise", "sylvan library", 
+  "fabled passage", "rejuvenating springs", "undergrowth stadium", "spectator seating", 
+  "vault of champions", "training center", "mana drain", "esper sentinel", 
+  "an offer you can't refuse", "swan song", "fellwar stone", "panharmonicon",
+  "doubling season", "anointed procession", "hardened scales", "parallel lives"
+]);
 
 /**
  * Scan card's oracle text and types to identify matching themes
@@ -192,61 +176,56 @@ export function calculateCohesionScore(deckNames, db) {
 }
 
 /**
- * Performs Vorthos flavor clash analysis
+ * Redefine flavor based on mechanical spice ratio (unique non-staple cards)
  * @param {string[]} deckNames 
  * @param {Object} db 
- * @returns {Object} Flavor stats
+ * @returns {Object} Flavor profile details
  */
-export function analyzeFlavorClashes(deckNames, db) {
-  const planeCounts = {};
-  const cardPlanes = {};
+export function calculateFlavorProfile(deckNames, db) {
+  let uniqueSpellsCount = 0;
+  let spiceCount = 0;
+  const spicyCards = [];
 
   for (const name of deckNames) {
-    const cardInfo = db[name.toLowerCase()];
-    if (!cardInfo) continue;
+    const card = db[name.toLowerCase()];
+    if (!card) continue;
 
-    const setCode = (cardInfo.set || "").toLowerCase();
-    const plane = SET_TO_PLANE[setCode];
-    if (plane) {
-      planeCounts[plane] = (planeCounts[plane] || 0) + 1;
-      cardPlanes[cardInfo.name] = plane;
+    // Skip basic lands
+    const rawType = (card.raw_type || "").toLowerCase();
+    if (rawType.includes("land") && !rawType.includes("creature")) {
+      continue;
+    }
+
+    uniqueSpellsCount++;
+    const rank = card.edhrec_rank;
+    const lowerName = card.name.toLowerCase().trim();
+
+    // Spicy = not in top 50 staples list AND (rank > 1200 or no rank)
+    const isStaple = STAPLES.has(lowerName);
+    const isNiche = !rank || rank > 1200;
+
+    if (!isStaple && isNiche) {
+      spiceCount++;
+      spicyCards.push(card.name);
     }
   }
 
-  const planeEntries = Object.entries(planeCounts);
-  if (planeEntries.length === 0) {
-    return { dominant_plane: "Unknown", dominant_plane_count: 0, plane_counts: {}, clashing_cards: [] };
-  }
-
-  let dominantPlane = "Unknown";
-  let dominantPlaneCount = 0;
-  for (const [plane, count] of planeEntries) {
-    if (count > dominantPlaneCount) {
-      dominantPlaneCount = count;
-      dominantPlane = plane;
-    }
-  }
-
-  const clashingCards = [];
-  // Only trigger warnings if we have at least 8 cards establishing this plane theme
-  if (dominantPlaneCount >= 8) {
-    const forbiddenPlanes = PLANE_CLASHES[dominantPlane] || new Set();
-    for (const [cardName, plane] of Object.entries(cardPlanes)) {
-      if (forbiddenPlanes.has(plane)) {
-        clashingCards.push({
-          card: cardName,
-          card_plane: plane,
-          dominant_plane: dominantPlane
-        });
-      }
-    }
+  const spiceRatio = uniqueSpellsCount > 0 ? spiceCount / uniqueSpellsCount : 0.0;
+  let flavorRating = "Generic / Staple-Heavy";
+  let flavorColor = "#E24A4A"; // Red
+  if (spiceRatio >= 0.4) {
+    flavorRating = "High Flavor (Spicy)";
+    flavorColor = "#27AE60"; // Green
+  } else if (spiceRatio >= 0.2) {
+    flavorRating = "Moderate Flavor (Synergistic)";
+    flavorColor = "#E67E22"; // Orange
   }
 
   return {
-    dominant_plane: dominantPlane,
-    dominant_plane_count: dominantPlaneCount,
-    plane_counts: planeCounts,
-    clashing_cards: clashingCards
+    flavorRating,
+    flavorColor,
+    spiceRatio: Math.round(spiceRatio * 100),
+    spicyCards: [...new Set(spicyCards)].sort()
   };
 }
 

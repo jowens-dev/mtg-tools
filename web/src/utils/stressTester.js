@@ -44,6 +44,9 @@ export function calculateJointConsistency(
   return totalProb;
 }
 
+const COMMANDER_RAMP_REGEX = /treasure|add\s+{|search.*library.*land/i;
+const COMMANDER_DRAW_REGEX = /draw|exile.*top.*library|look at.*top.*library/i;
+
 // Classifier Regexes
 const RAMP_REGEXES = [
   /\badd\b.*\bmana\b/i,
@@ -190,8 +193,10 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
   let commanderFulfillsRamp = false;
   let commanderFulfillsDraw = false;
   if (commanderCardInfo) {
-    commanderFulfillsRamp = isRamp(commanderCardInfo);
-    commanderFulfillsDraw = isDraw(commanderCardInfo);
+    const commText = (commanderCardInfo.oracle_text || "").toLowerCase();
+    const commTypes = (commanderCardInfo.raw_type || "").toLowerCase();
+    commanderFulfillsRamp = COMMANDER_RAMP_REGEX.test(commText) || COMMANDER_RAMP_REGEX.test(commTypes);
+    commanderFulfillsDraw = COMMANDER_DRAW_REGEX.test(commText) || COMMANDER_DRAW_REGEX.test(commTypes);
   }
 
   let k_ramp = 1;
@@ -209,6 +214,8 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
   }
 
   let cdiScore = 20;
+  let cdiFodderOverrideActive = false;
+
   if (commanderCardInfo && cohesionStats) {
     const commText = (commanderCardInfo.oracle_text || "").toLowerCase();
     const commTypes = (commanderCardInfo.raw_type || "").toLowerCase();
@@ -243,6 +250,15 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
       if (matchesTheme) {
         cdiScore += 40;
       }
+    }
+
+    // Fodder Awareness Override (Logic Fix 1.1)
+    const commGeneratesTokens = /create.*token/i.test(commText);
+    const commGeneratesCounters = /put.*counter|proliferate/i.test(commText);
+    if ((tokenPayoffs >= 2 && tokenGenerators < 2 && commGeneratesTokens) ||
+        (counterPayoffs >= 2 && counterGenerators < 2 && commGeneratesCounters)) {
+      cdiScore = 85;
+      cdiFodderOverrideActive = true;
     }
   }
 
@@ -287,6 +303,7 @@ export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionS
     commanderFulfillsRamp,
     commanderFulfillsDraw,
     rampTarget,
-    drawTarget
+    drawTarget,
+    cdiFodderOverrideActive
   };
 }
