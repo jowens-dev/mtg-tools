@@ -56,7 +56,12 @@ function App() {
       // 1. Fetch Commander details dynamically from Scryfall
       let commanderCardInfo = null;
       try {
-        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(commander)}`);
+        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(commander)}`, {
+          headers: {
+            "Accept": "application/json;q=0.9,*/*;q=0.8",
+            "User-Agent": "Loreweaver/1.0"
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           let types = [];

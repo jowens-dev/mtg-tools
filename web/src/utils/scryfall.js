@@ -26,7 +26,9 @@ export async function fetchCardsMetadata(cardNames) {
       const response = await fetch("https://api.scryfall.com/cards/collection", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Accept": "application/json;q=0.9,*/*;q=0.8",
+          "User-Agent": "Loreweaver/1.0"
         },
         body: JSON.stringify(body)
       });
@@ -72,9 +74,9 @@ export async function fetchCardsMetadata(cardNames) {
         }
       }
       
-      // Delay briefly to respect Scryfall rate limit recommendations (50-100ms)
+      // Delay to respect Scryfall rate limit recommendations (600ms between calls)
       if (chunks.length > 1) {
-        await new Promise(resolve => setTimeout(resolve, 80));
+        await new Promise(resolve => setTimeout(resolve, 600));
       }
     } catch (error) {
       console.error("Error fetching Scryfall data chunk:", error);

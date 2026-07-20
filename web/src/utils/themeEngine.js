@@ -1,4 +1,4 @@
-import { isGameChanger, isMassLandDenial, isTutor, isExtraTurn } from './cfpRules';
+import { isGameChanger, isMassLandDenial, isTutor, isExtraTurn } from './cfpRules.js';
 
 const MECHANICAL_THEMES = {
   "Landfall / Lands": [/\blandfall\b/i, /whenever a land enters/i, /play an additional land/i],
@@ -59,22 +59,17 @@ export function parseDecklistText(text) {
   const lines = text.split("\n");
   for (let line of lines) {
     line = line.trim();
-    if (!line || line.toLowerCase() === "commander" || line.toLowerCase() === "deck" || line.toLowerCase() === "sideboard" || line.toLowerCase() === "maybeboard" || line.startsWith("//")) {
+    if (!line || line.startsWith("//") || line.startsWith("#")) {
       continue;
     }
     
-    // Parse quantity (e.g., "1 Kozilek" or "Kozilek")
-    const parts = line.split(" ");
-    let qty = parseInt(parts[0], 10);
-    let name = line;
+    const match = line.match(/^(\d+)\s+(.+)$/);
+    if (!match) continue;
     
-    if (!isNaN(qty) && qty > 0) {
-      name = parts.slice(1).join(" ");
-    } else {
-      qty = 1;
-    }
+    const qty = parseInt(match[1], 10);
+    let name = match[2].trim();
     
-    name = name.replace(/\(.*\)/, "").trim(); // Strip set tags like (M19)
+    name = name.replace(/\(.*\)/g, "").replace(/\[.*\]/g, "").trim();
     for (let i = 0; i < qty; i++) {
       cardNames.push(name);
     }
