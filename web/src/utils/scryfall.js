@@ -38,7 +38,11 @@ export async function fetchCardsMetadata(cardNames) {
 
       const data = await response.json();
       
-      if (data.data) {
+      if (data && data.not_found && data.not_found.length > 0) {
+        console.warn("Cards not found on Scryfall in chunk lookup:", data.not_found);
+      }
+      
+      if (data && Array.isArray(data.data)) {
         for (const card of data.data) {
           const name = card.name;
           if (!name) continue;
