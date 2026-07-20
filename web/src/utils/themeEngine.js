@@ -1,3 +1,5 @@
+import { isGameChanger, isMassLandDenial, isTutor, isExtraTurn } from './cfpRules';
+
 const MECHANICAL_THEMES = {
   "Landfall / Lands": [/\blandfall\b/i, /whenever a land enters/i, /play an additional land/i],
   "Sacrifice / Aristocrats": [/sacrifice a/i, /whenever a.*dies/i, /die, you/i, /\baristocrat\b/i],
@@ -258,20 +260,33 @@ const FINISHER_REGEX = /win the game|loses the game|extra turn|additional combat
 
 export function analyzeIntentionalExperience(deckNames, db, targetIX, targetBracket) {
   const alerts = [];
-  let fastManaFound = [];
+  
+  const gameChangersFound = [];
+  const landDenialFound = [];
+  const tutorsFound = [];
+  const extraTurnsFound = [];
   let finisherCount = 0;
 
   for (const name of deckNames) {
     const lowerName = name.trim().toLowerCase();
     const cardInfo = db[lowerName];
-    
-    // Logic Heuristic A: Check for fast mana
-    if (FAST_MANA_LIST.has(lowerName)) {
-      fastManaFound.push(name);
-    }
 
-    // Logic Heuristic B: Check for finishers
+    // Check CFP classifications
+    if (isGameChanger(name)) {
+      gameChangersFound.push(name);
+    }
     if (cardInfo) {
+      if (isMassLandDenial(cardInfo)) {
+        landDenialFound.push(cardInfo.name);
+      }
+      if (isTutor(cardInfo)) {
+        tutorsFound.push(cardInfo.name);
+      }
+      if (isExtraTurn(cardInfo)) {
+        extraTurnsFound.push(cardInfo.name);
+      }
+
+      // Check finishers/combo cards
       const text = cardInfo.oracle_text || "";
       const type = cardInfo.raw_type || "";
       if (FINISHER_REGEX.test(text) || FINISHER_REGEX.test(type) || FINISHER_REGEX.test(cardInfo.name)) {
@@ -280,17 +295,119 @@ export function analyzeIntentionalExperience(deckNames, db, targetIX, targetBrac
     }
   }
 
-  // Warning for fast-mana in low/med/focused brackets (Tier 1, 2 or 3)
-  if (targetBracket <= 3 && fastManaFound.length > 0) {
-    alerts.push({
-      type: "warning",
-      title: "Bracket Mismatch",
-      message: `Fast-mana acceleration (${fastManaFound.join(", ")}) found in a casual/precon/focused (Tier ${targetBracket}) deck list.`
-    });
+  // Bracket 1: Exhibition
+  if (targetBracket === 1) {
+    if (gameChangersFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Exhibition)",
+        message: `Exhibition decks cannot run Game Changers. Found: ${gameChangersFound.join(", ")}.`
+      });
+    }
+    if (finisherCount > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Exhibition)",
+        message: "Exhibition decks cannot run intentional combos or heavy game-ending finishers."
+      });
+    }
+    if (landDenialFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Exhibition)",
+        message: `Exhibition decks cannot run mass land denial. Found: ${landDenialFound.join(", ")}.`
+      });
+    }
+    if (extraTurnsFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Exhibition)",
+        message: `Exhibition decks cannot run extra-turn cards. Found: ${extraTurnsFound.join(", ")}.`
+      });
+    }
+    if (tutorsFound.length > 2) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Exhibition)",
+        message: `Tutors are too dense (${tutorsFound.length} found). Exhibition decks require sparse tutors (max 2).`
+      });
+    }
   }
 
-  // Warning for zero finishers in combat/combo decks
-  if (finisherCount === 0) {
+  // Bracket 2: Core (Precon level)
+  else if (targetBracket === 2) {
+    if (gameChangersFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Core)",
+        message: `Core/Precon decks cannot run Game Changers. Found: ${gameChangersFound.join(", ")}.`
+      });
+    }
+    if (finisherCount > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Core)",
+        message: "Core/Precon decks cannot run intentional two-card combos or cheap loop finishers."
+      });
+    }
+    if (landDenialFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Core)",
+        message: `Core/Precon decks cannot run mass land denial. Found: ${landDenialFound.join(", ")}.`
+      });
+    }
+    if (extraTurnsFound.length > 1) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Core)",
+        message: `Extra-turn spells should only appear in low quantities (max 1). Found: ${extraTurnsFound.join(", ")}.`
+      });
+    }
+    if (tutorsFound.length > 2) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Core)",
+        message: `Tutors should be sparse (max 2). Found: ${tutorsFound.length} tutors.`
+      });
+    }
+  }
+
+  // Bracket 3: Upgraded
+  else if (targetBracket === 3) {
+    if (gameChangersFound.length > 3) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Upgraded)",
+        message: `Upgraded decks can run a max of 3 Game Changers. You have ${gameChangersFound.length}: ${gameChangersFound.join(", ")}.`
+      });
+    }
+    if (landDenialFound.length > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Upgraded)",
+        message: `Upgraded decks cannot run mass land denial. Found: ${landDenialFound.join(", ")}.`
+      });
+    }
+    if (extraTurnsFound.length > 2) {
+      alerts.push({
+        type: "warning",
+        title: "Bracket Mismatch (Upgraded)",
+        message: `Extra-turn spells should only appear in low quantities (max 2). Found: ${extraTurnsFound.join(", ")}.`
+      });
+    }
+    const hasCheapCombo = gameChangersFound.includes("thassa's oracle");
+    if (hasCheapCombo) {
+      alerts.push({
+        type: "info",
+        title: "Combo Advisory (Upgraded)",
+        message: "Advisory: Early-game two-card infinite combos are discouraged in Upgraded (Bracket 3)."
+      });
+    }
+  }
+
+  // Generic value pile check
+  if (finisherCount === 0 && targetBracket >= 2) {
     alerts.push({
       type: "info",
       title: "Value-Pile Alert",
@@ -300,7 +417,10 @@ export function analyzeIntentionalExperience(deckNames, db, targetIX, targetBrac
 
   return {
     alerts,
-    finisherCount,
-    fastManaFound
+    gameChangersFound,
+    landDenialFound,
+    tutorsFound,
+    extraTurnsFound,
+    finisherCount
   };
 }

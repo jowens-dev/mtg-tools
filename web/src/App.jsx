@@ -250,6 +250,54 @@ function App() {
               </div>
             ) : (
               <div>
+                {/* CFP Matchmaking Dashboard */}
+                <div className="card">
+                  <div className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Commander Brackets Matchmaking</span>
+                    <span style={{ fontSize: '0.8rem', backgroundColor: 'var(--bg-input)', padding: '2px 8px', borderRadius: '12px', color: 'var(--text-accent)' }}>
+                      Target: Bracket {bracket}
+                    </span>
+                  </div>
+
+                  <div className="theme-row" style={{ marginTop: '10px' }}>
+                    <span>Game Changers List:</span>
+                    <span style={{ 
+                      fontWeight: 'bold', 
+                      color: results.ix.gameChangersFound.length > (bracket === 3 ? 3 : (bracket >= 4 ? 40 : 0)) ? 'var(--color-red)' : 'var(--color-green)'
+                    }}>
+                      {results.ix.gameChangersFound.length} / {bracket === 3 ? '3' : (bracket >= 4 ? 'Unlimited' : '0')} allowed
+                    </span>
+                  </div>
+
+                  {results.ix.gameChangersFound.length > 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-accent)', fontWeight: 'bold' }}>Game Changers:</span>{' '}
+                      <span style={{ color: 'var(--text-white)' }}>{results.ix.gameChangersFound.join(", ")}</span>
+                    </div>
+                  )}
+
+                  {results.ix.landDenialFound.length > 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-accent)', fontWeight: 'bold' }}>Mass Land Denial:</span>{' '}
+                      <span style={{ color: 'var(--text-white)' }}>{results.ix.landDenialFound.join(", ")}</span>
+                    </div>
+                  )}
+
+                  {results.ix.extraTurnsFound.length > 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-accent)', fontWeight: 'bold' }}>Extra-Turn Spells:</span>{' '}
+                      <span style={{ color: 'var(--text-white)' }}>{results.ix.extraTurnsFound.join(", ")}</span>
+                    </div>
+                  )}
+
+                  {results.ix.tutorsFound.length > 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--text-accent)', fontWeight: 'bold' }}>Non-Land Tutors:</span>{' '}
+                      <span style={{ color: 'var(--text-white)' }}>{results.ix.tutorsFound.join(", ")} ({results.ix.tutorsFound.length})</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Intentional Experience Warning Alerts */}
                 {results.ix.alerts.length > 0 && (
                   <div className="card" style={{ border: '1px solid var(--color-orange)', backgroundColor: 'rgba(230, 126, 34, 0.05)' }}>
