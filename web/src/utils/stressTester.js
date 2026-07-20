@@ -117,7 +117,7 @@ export function calculateFragilityWeight(card) {
 /**
  * Calculates stress metrics for the parsed decklist
  */
-export function analyzeStress(deckNames, db) {
+export function analyzeStress(deckNames, db, commanderCardInfo = null, cohesionStats = null) {
   let landsCount = 0;
   let spellsCount = 0;
   let rampCount = 0;
@@ -186,8 +186,72 @@ export function analyzeStress(deckNames, db) {
   const scaleCount = scalingSpells.length;
   let tablePressureScore = Math.min(100, Math.round((scaleCount / 12) * 100));
 
-  // 3. Consistency Calculations
-  const jointProb = calculateJointConsistency(99, 13, landsCount, 3, rampCount, 1, drawCount, 1);
+  // 3. Commander Dependency Index (CDI) & Offsets
+  let commanderFulfillsRamp = false;
+  let commanderFulfillsDraw = false;
+  if (commanderCardInfo) {
+    commanderFulfillsRamp = isRamp(commanderCardInfo);
+    commanderFulfillsDraw = isDraw(commanderCardInfo);
+  }
+
+  let k_ramp = 1;
+  let k_draw = 1;
+  let rampTarget = 10;
+  let drawTarget = 10;
+
+  if (commanderFulfillsRamp) {
+    k_ramp = 0; // Turn 0 ramp engine reduces hand draw requirement
+    rampTarget = 7; // Reduce 99 success pool target by ~25%
+  }
+  if (commanderFulfillsDraw) {
+    k_draw = 0; // Turn 0 draw engine reduces hand draw requirement
+    drawTarget = 7; // Reduce 99 success pool target by ~25%
+  }
+
+  let cdiScore = 20;
+  if (commanderCardInfo && cohesionStats) {
+    const commText = (commanderCardInfo.oracle_text || "").toLowerCase();
+    const commTypes = (commanderCardInfo.raw_type || "").toLowerCase();
+
+    // Check Subtype dependency
+    const dominantSubtype = cohesionStats.dominant_subtype;
+    if (dominantSubtype && dominantSubtype !== "None") {
+      if (commText.includes(dominantSubtype.toLowerCase()) || commTypes.includes(dominantSubtype.toLowerCase())) {
+        cdiScore += 40;
+      }
+    }
+
+    // Check Theme dependency keywords
+    const dominantTheme = cohesionStats.dominant_theme;
+    if (dominantTheme && dominantTheme !== "None") {
+      const themeKeywords = {
+        "Landfall / Lands": ["land", "landfall"],
+        "Sacrifice / Aristocrats": ["sacrifice", "dies"],
+        "Graveyard / Reanimator": ["graveyard", "reanimate", "undergrowth", "dredge"],
+        "Blink / Flicker": ["exile", "flicker", "blink", "enters"],
+        "Tokens": ["token"],
+        "Counters (+1/+1 / Proliferate)": ["counter", "proliferate"],
+        "Spellslinger": ["instant", "sorcery"],
+        "Artifacts / Voltron": ["artifact", "equip", "aura"],
+        "Lifegain": ["life", "lifelink"],
+        "Discard / Madness": ["discard", "cycling", "madness"],
+        "Planeswalkers / Superfriends": ["planeswalker"]
+      };
+
+      const keywords = themeKeywords[dominantTheme] || [];
+      const matchesTheme = keywords.some(k => commText.includes(k) || commTypes.includes(k));
+      if (matchesTheme) {
+        cdiScore += 40;
+      }
+    }
+  }
+
+  cdiScore = Math.min(100, cdiScore);
+  const cdiRating = cdiScore >= 60 ? "HIGH" : cdiScore >= 40 ? "MEDIUM" : "LOW";
+  const glassCannonAlert = cdiRating === "HIGH" && protectionCount < 8;
+
+  // 4. Consistency Calculations
+  const jointProb = calculateJointConsistency(99, 13, landsCount, 3, rampCount, k_ramp, drawCount, k_draw);
   let consistencyRating = "Low Consistency";
   let consistencyColor = "#E24A4A";
   if (jointProb >= 0.70) {
@@ -216,6 +280,13 @@ export function analyzeStress(deckNames, db) {
     scalingSpells: [...new Set(scalingSpells)].sort(),
     jointProb,
     consistencyRating,
-    consistencyColor
+    consistencyColor,
+    cdiScore,
+    cdiRating,
+    glassCannonAlert,
+    commanderFulfillsRamp,
+    commanderFulfillsDraw,
+    rampTarget,
+    drawTarget
   };
 }

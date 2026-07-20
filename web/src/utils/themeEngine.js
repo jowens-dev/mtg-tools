@@ -247,3 +247,60 @@ export function analyzeFlavorClashes(deckNames, db) {
     clashing_cards: clashingCards
   };
 }
+
+const FAST_MANA_LIST = new Set([
+  "mana crypt", "mana vault", "grim monolith", "chrome mox", 
+  "mox opal", "mox diamond", "lotus petal", "jeweled lotus", 
+  "lion's eye diamond", "ancient tomb"
+]);
+
+const FINISHER_REGEX = /win the game|loses the game|extra turn|additional combat phase|craterhoof behemoth|triumph of the hordes|overwhelming stampede|beastmaster ascension|akroma's will|torment of hailfire|insurrection|exquisite blood|thassa's oracle|laboratory maniac/i;
+
+export function analyzeIntentionalExperience(deckNames, db, targetIX, targetBracket) {
+  const alerts = [];
+  let fastManaFound = [];
+  let finisherCount = 0;
+
+  for (const name of deckNames) {
+    const lowerName = name.trim().toLowerCase();
+    const cardInfo = db[lowerName];
+    
+    // Logic Heuristic A: Check for fast mana
+    if (FAST_MANA_LIST.has(lowerName)) {
+      fastManaFound.push(name);
+    }
+
+    // Logic Heuristic B: Check for finishers
+    if (cardInfo) {
+      const text = cardInfo.oracle_text || "";
+      const type = cardInfo.raw_type || "";
+      if (FINISHER_REGEX.test(text) || FINISHER_REGEX.test(type) || FINISHER_REGEX.test(cardInfo.name)) {
+        finisherCount++;
+      }
+    }
+  }
+
+  // Warning for fast-mana in low/med brackets (Tier 1 or 2)
+  if (targetBracket <= 2 && fastManaFound.length > 0) {
+    alerts.push({
+      type: "warning",
+      title: "Bracket Mismatch",
+      message: `Fast-mana acceleration (${fastManaFound.join(", ")}) found in a casual/focused (Tier ${targetBracket}) deck list.`
+    });
+  }
+
+  // Warning for zero finishers in combat/combo decks
+  if (finisherCount === 0) {
+    alerts.push({
+      type: "info",
+      title: "Value-Pile Alert",
+      message: "Value-Pile: Deck lacks deterministic closing power. Consider adding 1-2 game-ending finishers."
+    });
+  }
+
+  return {
+    alerts,
+    finisherCount,
+    fastManaFound
+  };
+}

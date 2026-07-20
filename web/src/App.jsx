@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { fetchCardsMetadata } from './utils/scryfall';
-import { parseDecklistText, calculateCohesionScore, analyzeFlavorClashes } from './utils/themeEngine';
+import { parseDecklistText, calculateCohesionScore, analyzeFlavorClashes, analyzeIntentionalExperience } from './utils/themeEngine';
 import { analyzeStress } from './utils/stressTester';
+import { detectBrokenChains, fetchSpiceRecommendations } from './utils/spiceInjector';
 
 function App() {
   const [activeTab, setActiveTab] = useState('input');
   const [commander, setCommander] = useState('Kozilek, the Great Distortion');
   const [bracket, setBracket] = useState(2);
+  const [targetIX, setTargetIX] = useState('Aggro-Combat');
   const [decklist, setDecklist] = useState(
     `// Commander\n` +
     `1 Kozilek, the Great Distortion\n\n` +
@@ -40,32 +42,86 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
   const [results, setResults] = useState(null);
+  
+  const [brokenChains, setBrokenChains] = useState([]);
+  const [spiceRecommendations, setSpiceRecommendations] = useState([]);
+  const [spiceLoading, setSpiceLoading] = useState(false);
+  const [selectedChainIndex, setSelectedChainIndex] = useState(0);
 
   const handleAnalyze = async () => {
     if (!decklist.trim()) return;
     setLoading(true);
     
     try {
-      // Parse deck lists
+      // 1. Fetch Commander details dynamically from Scryfall
+      let commanderCardInfo = null;
+      try {
+        const res = await fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(commander)}`);
+        if (res.ok) {
+          const data = await res.json();
+          let types = [];
+          let subtypes = [];
+          const typeLine = data.type_line || "";
+          if (typeLine) {
+            const parts = typeLine.split("—");
+            types = parts[0].trim().split(" ").map(t => t.toLowerCase());
+            if (parts[1]) {
+              subtypes = parts[1].trim().split(" ").filter(Boolean).map(s => s.toLowerCase());
+            }
+          }
+          commanderCardInfo = {
+            name: data.name,
+            raw_type: typeLine,
+            types,
+            subtypes,
+            oracle_text: data.oracle_text || "",
+            colors: data.color_identity || []
+          };
+        }
+      } catch (e) {
+        console.error("Could not fetch commander info from Scryfall:", e);
+      }
+
+      // 2. Parse deck lists
       const parsedNames = parseDecklistText(decklist);
       
-      // Batch fetch card details from Scryfall API
+      // 3. Batch fetch card details from Scryfall API
       const db = await fetchCardsMetadata(parsedNames);
       
-      // Run theme engine calculations
+      // 4. Run theme calculations
       const cohesion = calculateCohesionScore(parsedNames, db);
       const flavor = analyzeFlavorClashes(parsedNames, db);
+      const ix = analyzeIntentionalExperience(parsedNames, db, targetIX, bracket);
       
-      // Run stress-tester engine calculations
-      const stress = analyzeStress(parsedNames, db);
+      // 5. Run stress-tester engine calculations
+      const stress = analyzeStress(parsedNames, db, commanderCardInfo, cohesion);
+      
+      // 6. Broken chain detection
+      const chains = detectBrokenChains(parsedNames, db);
+      setBrokenChains(chains);
+      setSelectedChainIndex(0);
+      setSpiceRecommendations([]);
       
       setResults({
         cohesion,
         flavor,
+        ix,
         stress,
-        totalCards: parsedNames.length
+        totalCards: parsedNames.length,
+        commanderInfo: commanderCardInfo
       });
       setAnalyzed(true);
+
+      // Trigger spice fetch for first broken chain
+      if (chains.length > 0) {
+        setSpiceLoading(true);
+        const firstChain = chains[0];
+        const colorIdentity = commanderCardInfo ? commanderCardInfo.colors : [];
+        const recs = await fetchSpiceRecommendations(firstChain.queryKeyword, colorIdentity);
+        setSpiceRecommendations(recs);
+        setSpiceLoading(false);
+      }
+      
       setActiveTab('cohesion');
     } catch (error) {
       alert("Error analyzing deck list. Check API connectivity.");
@@ -73,6 +129,17 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSelectChain = async (index) => {
+    setSelectedChainIndex(index);
+    setSpiceLoading(true);
+    setSpiceRecommendations([]);
+    const chain = brokenChains[index];
+    const colorIdentity = results?.commanderInfo ? results.commanderInfo.colors : [];
+    const recs = await fetchSpiceRecommendations(chain.queryKeyword, colorIdentity);
+    setSpiceRecommendations(recs);
+    setSpiceLoading(false);
   };
 
   const getCohesionStyleClass = (score) => {
@@ -110,6 +177,20 @@ function App() {
                   value={commander}
                   onChange={(e) => setCommander(e.target.value)}
                 />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Target Intentional Experience (IX)</label>
+                <select 
+                  className="text-input"
+                  value={targetIX}
+                  onChange={(e) => setTargetIX(e.target.value)}
+                >
+                  <option value="Aggro-Combat">Aggro-Combat (Combat focused, damage modifiers)</option>
+                  <option value="Grindy Value Engine">Grindy Value Engine (Graveyard, draw, end-step triggers)</option>
+                  <option value="Deterministic Combo">Deterministic Combo (Infinite loops, tutors, untapping)</option>
+                  <option value="Political/Interactive">Political/Interactive (Voting, choices, group play)</option>
+                </select>
               </div>
 
               <div className="form-group">
@@ -168,6 +249,21 @@ function App() {
               </div>
             ) : (
               <div>
+                {/* Intentional Experience Warning Alerts */}
+                {results.ix.alerts.length > 0 && (
+                  <div className="card" style={{ border: '1px solid var(--color-orange)', backgroundColor: 'rgba(230, 126, 34, 0.05)' }}>
+                    <div className="form-label" style={{ color: 'var(--color-orange)' }}>⚠️ Experience Warnings</div>
+                    {results.ix.alerts.map((alert, i) => (
+                      <div key={i} style={{ marginBottom: '8px', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                        <span style={{ fontWeight: 'bold', color: alert.type === 'warning' ? 'var(--color-red)' : 'var(--color-orange)' }}>
+                          [{alert.title}]
+                        </span>{' '}
+                        {alert.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Cohesion Score card */}
                 <div className="card" style={{ textAlign: 'center' }}>
                   <div className="form-label">Theme Cohesion Score</div>
@@ -256,6 +352,27 @@ function App() {
               </div>
             ) : (
               <div>
+                {/* CDI Dashboard card */}
+                <div className="card">
+                  <div className="metric-row">
+                    <div className="metric-header">
+                      <span className="metric-title" style={{ color: 'var(--text-accent)' }}>Commander Dependency (CDI)</span>
+                      <span className="metric-value" style={{ color: results.stress.cdiRating === 'HIGH' ? 'var(--color-red)' : results.stress.cdiRating === 'MEDIUM' ? 'var(--color-orange)' : 'var(--color-green)' }}>
+                        {results.stress.cdiRating} ({results.stress.cdiScore}/100)
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', marginTop: '4px', lineHeight: '1.4' }}>
+                      Maps how heavily the 99 payoffs rely on the commander generator to execute their strategy.
+                    </p>
+
+                    {results.stress.glassCannonAlert && (
+                      <div style={{ marginTop: '12px', padding: '10px', backgroundColor: 'rgba(226, 74, 74, 0.1)', border: '1px solid var(--color-red)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--color-red)', fontWeight: 'bold' }}>
+                        [!] Glass Cannon Alert: High CDI, but deck has less than 8 protection spells ({results.stress.protectionCount} found). Add more protective cards!
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* 1. Fragility Index card */}
                 <div className="card">
                   <div className="metric-row">
@@ -327,11 +444,112 @@ function App() {
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-accent)', lineHeight: '1.4' }}>
                       Probability of drawing &ge;3 lands, &ge;1 ramp spell, and &ge;1 draw spell by turn 6 (sample of 13 cards).
                     </p>
+
+                    {(results.stress.commanderFulfillsRamp || results.stress.commanderFulfillsDraw) && (
+                      <div style={{ margin: '10px 0', padding: '8px', backgroundColor: 'rgba(39, 174, 96, 0.08)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--color-green)' }}>
+                        {results.stress.commanderFulfillsRamp && "✓ Commander fulfills RAMP engine (Guaranteed Turn 0 draw: reduced 99 requirement by 25%)\n"}
+                        {results.stress.commanderFulfillsDraw && "✓ Commander fulfills DRAW engine (Guaranteed Turn 0 draw: reduced 99 requirement by 25%)"}
+                      </div>
+                    )}
+
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-accent)', marginTop: '8px' }}>
-                      Core Ingestion: Lands ({results.stress.landsCount}/37 target) | Ramp ({results.stress.rampCount}/10 target) | Draw ({results.stress.drawCount}/10 target)
+                      Core Ingestion: Lands ({results.stress.landsCount}/37 target) | Ramp ({results.stress.rampCount}/{results.stress.rampTarget} target) | Draw ({results.stress.drawCount}/{results.stress.drawTarget} target)
                     </p>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'spice' && (
+          <div className="tab-panel">
+            <h2>Proactive Spice Injector</h2>
+
+            {!analyzed ? (
+              <div className="empty-state">
+                <div className="empty-icon">🌶️</div>
+                <p>No analysis loaded. Go to the Input tab and run "Analyze Deck" first.</p>
+              </div>
+            ) : loading ? (
+              <div className="loader-container">
+                <div className="loader-spinner"></div>
+                <p>Searching for broken chains...</p>
+              </div>
+            ) : brokenChains.length === 0 ? (
+              <div className="card" style={{ textAlign: 'center', padding: '30px 20px' }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>✓</div>
+                <h3>All Theme Chains Intact</h3>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-accent)', marginTop: '8px' }}>
+                  Your generators (cards placing counters/creating tokens) and payoffs (doubling season/aristocrat outlets) are perfectly balanced!
+                </p>
+              </div>
+            ) : (
+              <div>
+                {/* Selector for broken chains */}
+                <div className="form-group">
+                  <label className="form-label">Select Broken Chain to Fix</label>
+                  <select 
+                    className="text-input"
+                    value={selectedChainIndex}
+                    onChange={(e) => handleSelectChain(parseInt(e.target.value))}
+                  >
+                    {brokenChains.map((chain, i) => (
+                      <option key={i} value={i}>{chain.theme}: {chain.reason}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="card" style={{ border: '1px solid var(--color-orange)', backgroundColor: 'rgba(230, 126, 34, 0.03)' }}>
+                  <div className="form-label" style={{ color: 'var(--color-orange)' }}>Broken Chain Analysis</div>
+                  <p style={{ fontSize: '0.9rem', lineHeight: '1.4' }}>
+                    Loreweaver identified that your deck supports the <strong>{brokenChains[selectedChainIndex].theme}</strong> theme, but lacks sufficient <strong>{brokenChains[selectedChainIndex].missingType}s</strong> to execute it reliably.
+                  </p>
+                </div>
+
+                {/* Spice recommendations carousel */}
+                <div className="form-label" style={{ marginBottom: '8px' }}>Recommended Niche Alternatives (Anti-Staple Filter Active)</div>
+                {spiceLoading ? (
+                  <div className="loader-container">
+                    <div className="loader-spinner"></div>
+                    <p>Consulting Scryfall for niche cards...</p>
+                  </div>
+                ) : spiceRecommendations.length > 0 ? (
+                  <div className="carousel-container" style={{ display: 'flex', overflowX: 'auto', gap: '16px', paddingBottom: '12px' }}>
+                    {spiceRecommendations.map((card, idx) => (
+                      <div 
+                        key={idx} 
+                        className="card" 
+                        style={{ 
+                          flex: '0 0 280px', 
+                          marginBottom: 0, 
+                          border: '1px solid var(--border-purple)',
+                          backgroundColor: 'var(--bg-panel)'
+                        }}
+                      >
+                        {card.image_url && (
+                          <img 
+                            src={card.image_url} 
+                            alt={card.name} 
+                            style={{ width: '100%', borderRadius: '8px', marginBottom: '12px', display: 'block' }} 
+                          />
+                        )}
+                        <h3 style={{ fontSize: '1rem', color: 'var(--text-white)', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{card.name}</span>
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-accent)' }}>{card.mana_cost}</span>
+                        </h3>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-accent)', marginBottom: '8px', fontStyle: 'italic' }}>
+                          {card.type_line} (Rank #{card.edhrec_rank})
+                        </p>
+                        <p style={{ fontSize: '0.8rem', lineHeight: '1.4', color: 'var(--text-main)' }}>
+                          {card.oracle_text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-accent)' }}>Could not load recommendations. Check internet connection.</p>
+                )}
               </div>
             )}
           </div>
@@ -360,6 +578,13 @@ function App() {
         >
           <span className="nav-icon">📊</span>
           <span>Stress</span>
+        </button>
+        <button 
+          className={`nav-tab ${activeTab === 'spice' ? 'active' : ''}`}
+          onClick={() => setActiveTab('spice')}
+        >
+          <span className="nav-icon">🌶️</span>
+          <span>Spice</span>
         </button>
       </nav>
     </div>
