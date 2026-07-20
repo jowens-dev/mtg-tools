@@ -133,7 +133,7 @@ function App() {
       
       setActiveTab('cohesion');
     } catch (error) {
-      alert("Error analyzing deck list. Check API connectivity.");
+      alert(`Error analyzing deck list: ${error.message || error}`);
       console.error(error);
     } finally {
       setLoading(false);
