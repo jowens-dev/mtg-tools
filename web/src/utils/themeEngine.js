@@ -280,12 +280,12 @@ export function analyzeIntentionalExperience(deckNames, db, targetIX, targetBrac
     }
   }
 
-  // Warning for fast-mana in low/med brackets (Tier 1 or 2)
-  if (targetBracket <= 2 && fastManaFound.length > 0) {
+  // Warning for fast-mana in low/med/focused brackets (Tier 1, 2 or 3)
+  if (targetBracket <= 3 && fastManaFound.length > 0) {
     alerts.push({
       type: "warning",
       title: "Bracket Mismatch",
-      message: `Fast-mana acceleration (${fastManaFound.join(", ")}) found in a casual/focused (Tier ${targetBracket}) deck list.`
+      message: `Fast-mana acceleration (${fastManaFound.join(", ")}) found in a casual/precon/focused (Tier ${targetBracket}) deck list.`
     });
   }
 

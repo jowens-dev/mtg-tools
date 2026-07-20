@@ -198,17 +198,18 @@ function App() {
                 <input 
                   type="range" 
                   min="1" 
-                  max="4" 
+                  max="5" 
                   className="text-input" 
                   value={bracket}
                   onChange={(e) => setBracket(parseInt(e.target.value))}
                   style={{ height: '8px', padding: 0 }}
                 />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginTop: '4px', color: 'var(--text-accent)' }}>
-                  <span>Tier 1: Casual</span>
-                  <span>Tier 2: Focused</span>
-                  <span>Tier 3: High Power</span>
-                  <span>Tier 4: cEDH</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', marginTop: '4px', color: 'var(--text-accent)' }}>
+                  <span>1: Battlecruiser</span>
+                  <span>2: Precon+</span>
+                  <span>3: Focused</span>
+                  <span>4: Optimized</span>
+                  <span>5: cEDH</span>
                 </div>
               </div>
 
