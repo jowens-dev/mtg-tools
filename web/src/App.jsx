@@ -3,7 +3,7 @@ import { fetchCardsMetadata } from './utils/scryfall';
 import { parseDecklistText, calculateCohesionScore, calculateFlavorProfile, analyzeIntentionalExperience } from './utils/themeEngine';
 import { analyzeStress } from './utils/stressTester';
 import { detectBrokenChains, fetchSpiceRecommendations } from './utils/spiceInjector';
-
+import LoreweaverDashboard from './LoreweaverDashboard';
 const RECOMMENDATION_API_URL = 'http://localhost:8000/api/recommendations';
 const CARD_BACK_FALLBACK = 'https://cards.scryfall.io/back.jpg';
 const RECOMMENDATION_LANE_ORDER = ['lands', 'ramp', 'draw', 'removal', 'synergy', 'utility', 'other'];
@@ -845,6 +845,11 @@ function App() {
             )}
           </div>
         )}
+        {activeTab === 'builder' && (
+          <div className="tab-panel" style={{ padding: 0, height: '100vh', overflow: 'hidden' }}>
+            <LoreweaverDashboard/>
+          </div>
+        )}
       </main>
 
       {/* Wizards Fan Content & Privacy Footer */}
@@ -897,6 +902,13 @@ function App() {
         >
           <span className="nav-icon">🌶️</span>
           <span>Spice</span>
+        </button>
+        <button 
+          className={`nav-tab ${activeTab === 'builder' ? 'active' : ''}`}
+          onClick={() => setActiveTab('builder')}
+        >
+          <span className="nav-icon">🏗️</span>
+          <span>Builder</span>
         </button>
       </nav>
     </div>
