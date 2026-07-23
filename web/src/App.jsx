@@ -1,8 +1,108 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchCardsMetadata } from './utils/scryfall';
 import { parseDecklistText, calculateCohesionScore, calculateFlavorProfile, analyzeIntentionalExperience } from './utils/themeEngine';
 import { analyzeStress } from './utils/stressTester';
 import { detectBrokenChains, fetchSpiceRecommendations } from './utils/spiceInjector';
+
+const RECOMMENDATION_API_URL = 'http://localhost:8000/api/recommendations';
+const CARD_BACK_FALLBACK = 'https://cards.scryfall.io/back.jpg';
+const RECOMMENDATION_LANE_ORDER = ['lands', 'ramp', 'draw', 'removal', 'synergy', 'utility', 'other'];
+
+const LANE_LABELS = {
+  lands: 'Lands',
+  ramp: 'Ramp',
+  draw: 'Draw',
+  removal: 'Removal',
+  synergy: 'Synergy',
+  utility: 'Utility',
+  other: 'Other'
+};
+
+const normalizeLaneKey = (value) => {
+  const normalized = String(value || 'other').toLowerCase();
+
+  if (normalized.includes('land')) return 'lands';
+  if (normalized.includes('ramp') || normalized.includes('mana')) return 'ramp';
+  if (normalized.includes('draw') || normalized.includes('card advantage')) return 'draw';
+  if (normalized.includes('removal') || normalized.includes('interaction') || normalized.includes('answer')) return 'removal';
+  if (normalized.includes('utility') || normalized.includes('toolbox')) return 'utility';
+  if (normalized.includes('synergy') || normalized.includes('engine') || normalized.includes('core')) return 'synergy';
+  return normalized;
+};
+
+const normalizeRecommendationCard = (card) => ({
+  name: card?.name || 'Unnamed Card',
+  mana_cost: card?.mana_cost || '',
+  type_line: card?.type_line || card?.type || '',
+  oracle_text: card?.oracle_text || '',
+  image_url: card?.image_url || card?.imageUrl || card?.image || '',
+  edhrec_rank: card?.edhrec_rank ?? card?.rank ?? null
+});
+
+const laneTitle = (key) => LANE_LABELS[key] || String(key || 'Other').replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+const mapRecommendationResponse = (payload) => {
+  const lanes = new Map();
+
+  const addCard = (laneName, card) => {
+    const laneKey = normalizeLaneKey(laneName);
+    const nextCard = normalizeRecommendationCard(card);
+    if (!lanes.has(laneKey)) {
+      lanes.set(laneKey, []);
+    }
+    lanes.get(laneKey).push(nextCard);
+  };
+
+  const addLaneObject = (laneName, cards) => {
+    if (!Array.isArray(cards)) return;
+    cards.forEach((card) => addCard(laneName, card));
+  };
+
+  if (Array.isArray(payload)) {
+    payload.forEach((entry) => {
+      if (!entry) return;
+
+      if (Array.isArray(entry.cards)) {
+        addLaneObject(entry.title || entry.name || entry.category || entry.lane || entry.section || 'other', entry.cards);
+        return;
+      }
+
+      addCard(entry.lane || entry.category || entry.section || entry.bucket || entry.kind || entry.group || 'other', entry);
+    });
+  } else if (payload && typeof payload === 'object') {
+    const lanePayload = payload.data || payload.swimlanes || payload.recommendations || payload.categories || payload.lanes || payload.sections || payload.groups;
+
+    if (lanePayload && typeof lanePayload === 'object' && !Array.isArray(lanePayload)) {
+      Object.entries(lanePayload).forEach(([laneName, cards]) => addLaneObject(laneName, cards));
+    } else if (Array.isArray(lanePayload)) {
+      lanePayload.forEach((entry) => {
+        if (!entry) return;
+
+        if (Array.isArray(entry.cards)) {
+          addLaneObject(entry.title || entry.name || entry.category || entry.lane || entry.section || 'other', entry.cards);
+          return;
+        }
+
+        addCard(entry.lane || entry.category || entry.section || entry.bucket || entry.kind || entry.group || 'other', entry);
+      });
+    } else {
+      ['lands', 'ramp', 'draw', 'removal', 'synergy', 'utility', 'other'].forEach((laneName) => {
+        if (Array.isArray(payload[laneName])) {
+          addLaneObject(laneName, payload[laneName]);
+        }
+      });
+    }
+  }
+
+  return RECOMMENDATION_LANE_ORDER
+    .filter((laneKey) => lanes.has(laneKey))
+    .map((laneKey) => ({ title: laneTitle(laneKey), cards: lanes.get(laneKey) }))
+    .concat(
+      [...lanes.entries()]
+        .filter(([laneKey]) => !RECOMMENDATION_LANE_ORDER.includes(laneKey))
+        .map(([laneKey, cards]) => ({ title: laneTitle(laneKey), cards }))
+    );
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState('input');
@@ -48,6 +148,13 @@ function App() {
   const [spiceRecommendations, setSpiceRecommendations] = useState([]);
   const [spiceLoading, setSpiceLoading] = useState(false);
   const [selectedChainIndex, setSelectedChainIndex] = useState(0);
+  const [commanderQuery, setCommanderQuery] = useState(commander);
+  const [requestedCommander, setRequestedCommander] = useState('');
+  const [spiceLevel, setSpiceLevel] = useState(50);
+  const [recommendationLanes, setRecommendationLanes] = useState([]);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState('');
+  const [hasRequestedRecommendations, setHasRequestedRecommendations] = useState(false);
 
   const handleAnalyze = async () => {
     if (!decklist.trim()) return;
@@ -151,6 +258,56 @@ function App() {
     setSpiceRecommendations(recs);
     setSpiceLoading(false);
   };
+
+  const handleCommanderSearch = () => {
+    const nextCommander = commanderQuery.trim();
+
+    if (!nextCommander) return;
+
+    setRequestedCommander(nextCommander);
+    setHasRequestedRecommendations(true);
+  };
+
+  useEffect(() => {
+    if (!hasRequestedRecommendations || !requestedCommander.trim()) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadRecommendations = async () => {
+      setRecommendationLoading(true);
+      setRecommendationError('');
+
+      try {
+        const url = new URL(RECOMMENDATION_API_URL);
+        url.searchParams.set('commander', requestedCommander.trim());
+        url.searchParams.set('spice', String(spiceLevel));
+
+        const response = await fetch(url.toString(), { signal: controller.signal });
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const payload = await response.json();
+        setRecommendationLanes(mapRecommendationResponse(payload));
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          setRecommendationLanes([]);
+          setRecommendationError(error?.message || 'Could not load recommendations from the backend.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setRecommendationLoading(false);
+        }
+      }
+    };
+
+    loadRecommendations();
+
+    return () => controller.abort();
+  }, [hasRequestedRecommendations, requestedCommander, spiceLevel]);
 
   const getCohesionStyleClass = (score) => {
     if (score >= 75) return 'cohesion-excellent';
@@ -572,49 +729,118 @@ function App() {
                   </p>
                 </div>
 
-                {/* Spice recommendations carousel */}
-                <div className="form-label" style={{ marginBottom: '8px' }}>Recommended Niche Alternatives (Anti-Staple Filter Active)</div>
-                {spiceLoading ? (
-                  <div className="loader-container">
-                    <div className="loader-spinner"></div>
-                    <p>Consulting Scryfall for niche cards...</p>
+                <div className="card">
+                  <div className="form-label">Commander Recommendations</div>
+                  <div className="form-group">
+                    <label className="form-label">Commander Search</label>
+                    <input
+                      type="text"
+                      className="text-input"
+                      value={commanderQuery}
+                      onChange={(e) => setCommanderQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCommanderSearch();
+                        }
+                      }}
+                      placeholder="Type a commander name and press Enter"
+                    />
                   </div>
-                ) : spiceRecommendations.length > 0 ? (
-                  <div className="carousel-container" style={{ display: 'flex', overflowX: 'auto', gap: '16px', paddingBottom: '12px' }}>
-                    {spiceRecommendations.map((card, idx) => (
-                      <div 
-                        key={idx} 
-                        className="card" 
-                        style={{ 
-                          flex: '0 0 280px', 
-                          marginBottom: 0, 
-                          border: '1px solid var(--border-purple)',
-                          backgroundColor: 'var(--bg-panel)'
-                        }}
-                      >
-                        {card.image_url && (
-                          <img 
-                            src={card.image_url} 
-                            alt={card.name} 
-                            style={{ width: '100%', borderRadius: '8px', marginBottom: '12px', display: 'block' }} 
-                          />
-                        )}
-                        <h3 style={{ fontSize: '1rem', color: 'var(--text-white)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{card.name}</span>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-accent)' }}>{card.mana_cost}</span>
-                        </h3>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-accent)', marginBottom: '8px', fontStyle: 'italic' }}>
-                          {card.type_line} (Rank #{card.edhrec_rank})
-                        </p>
-                        <p style={{ fontSize: '0.8rem', lineHeight: '1.4', color: 'var(--text-main)' }}>
-                          {card.oracle_text}
-                        </p>
-                      </div>
-                    ))}
+
+                  <div className="form-group">
+                    <label className="form-label">Flavor Dial: {spiceLevel}</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      className="text-input"
+                      value={spiceLevel}
+                      onChange={(e) => {
+                        const nextSpiceLevel = parseInt(e.target.value, 10);
+                        setSpiceLevel(nextSpiceLevel);
+
+                        const nextCommander = commanderQuery.trim();
+                        if (nextCommander) {
+                          setRequestedCommander(nextCommander);
+                          setHasRequestedRecommendations(true);
+                        }
+                      }}
+                      style={{ height: '8px', padding: 0 }}
+                    />
                   </div>
-                ) : (
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-accent)' }}>Could not load recommendations. Check internet connection.</p>
-                )}
+
+                  {!hasRequestedRecommendations ? (
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-accent)' }}>
+                      Press Enter in the search bar to load backend recommendations.
+                    </p>
+                  ) : recommendationLoading ? (
+                    <div className="loader-container">
+                      <div className="loader-spinner"></div>
+                      <p>Fetching commander recommendations from the backend...</p>
+                    </div>
+                  ) : recommendationError ? (
+                    <p style={{ fontSize: '0.9rem', color: 'var(--color-red)' }}>{recommendationError}</p>
+                  ) : recommendationLanes.length > 0 ? (
+                    <div style={{ display: 'grid', gap: '16px' }}>
+                      {recommendationLanes.map((lane) => (
+                        <section key={lane.title} className="card" style={{ marginBottom: 0 }}>
+                          <div className="form-label" style={{ marginBottom: '12px' }}>{lane.title}</div>
+                          <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '12px' }}>
+                            {lane.cards.map((card, idx) => (
+                              <div
+                                key={`${lane.title}-${card.name}-${idx}`}
+                                className="card"
+                                style={{
+                                  flex: '0 0 280px',
+                                  marginBottom: 0,
+                                  border: '1px solid var(--border-purple)',
+                                  backgroundColor: 'var(--bg-panel)'
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: '100%',
+                                    aspectRatio: '3 / 4',
+                                    overflow: 'hidden',
+                                    borderRadius: '12px',
+                                    marginBottom: '12px',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                                  }}
+                                >
+                                  <img
+                                    src={card.image_url || CARD_BACK_FALLBACK}
+                                    alt={card.name}
+                                    className="h-full w-full object-cover"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                    onError={(event) => {
+                                      if (event.currentTarget.src !== CARD_BACK_FALLBACK) {
+                                        event.currentTarget.src = CARD_BACK_FALLBACK;
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <h3 style={{ fontSize: '1rem', color: 'var(--text-white)', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{card.name}</span>
+                                  <span style={{ fontSize: '0.85rem', color: 'var(--text-accent)' }}>{card.mana_cost}</span>
+                                </h3>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-accent)', marginBottom: '8px', fontStyle: 'italic' }}>
+                                  {card.type_line}{card.edhrec_rank ? ` (Rank #${card.edhrec_rank})` : ''}
+                                </p>
+                                <p style={{ fontSize: '0.8rem', lineHeight: '1.4', color: 'var(--text-main)' }}>
+                                  {card.oracle_text}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-accent)' }}>No recommendations returned for that commander and flavor level.</p>
+                  )}
+                </div>
               </div>
             )}
           </div>
