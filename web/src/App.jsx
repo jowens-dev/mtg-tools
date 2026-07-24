@@ -4,7 +4,7 @@ import { parseDecklistText, calculateCohesionScore, calculateFlavorProfile, anal
 import { analyzeStress } from './utils/stressTester';
 import { detectBrokenChains, fetchSpiceRecommendations } from './utils/spiceInjector';
 import LoreweaverDashboard from './LoreweaverDashboard';
-const RECOMMENDATION_API_URL = 'http://localhost:8000/api/recommendations';
+const API_URL = 'https://api.lore-weaver.app';
 const CARD_BACK_FALLBACK = 'https://cards.scryfall.io/back.jpg';
 const RECOMMENDATION_LANE_ORDER = ['lands', 'ramp', 'draw', 'removal', 'synergy', 'utility', 'other'];
 
@@ -849,31 +849,23 @@ function App() {
           <div className="tab-panel" style={{ padding: 0, height: '100vh', overflow: 'hidden' }}>
             <LoreweaverDashboard/>
           </div>
+          )}
+          {activeTab === 'legal' && (
+          <div className="tab-panel">
+            <div className="card" style={{ textAlign: 'center', opacity: 0.8, marginTop: '20px' }}>
+              <h2>Legal & Privacy</h2>
+              <p style={{ fontSize: '0.85rem', marginBottom: '16px', lineHeight: '1.5' }}>
+                Unofficial Fan Content permitted under the <a href="https://company.wizards.com/fancontentpolicy" target="_blank" rel="noreferrer" style={{ color: 'var(--text-accent)', textDecoration: 'underline' }}>WotC Fan Content Policy</a>. © Wizards of the Coast LLC.
+              </p>
+              <p style={{ fontSize: '0.85rem', lineHeight: '1.5' }}>
+                🔒 <strong>Privacy:</strong> Decklists are analyzed locally in your browser. No data is saved, tracked, or stored remotely on any server.
+              </p>
+            </div>
+          </div>
         )}
       </main>
 
-      {/* Wizards Fan Content & Privacy Footer */}
-      <footer style={{
-        padding: '16px 24px 80px 24px',
-        fontSize: '0.75rem',
-        color: 'var(--text-accent)',
-        textAlign: 'center',
-        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-        lineHeight: '1.6',
-        backgroundColor: 'rgba(18, 11, 26, 0.3)',
-        marginTop: '20px'
-      }}>
-        <p style={{ margin: '0 0 8px 0' }}>
-          Loreweaver is unofficial Fan Content permitted under the Wizards of the Coast Fan Content Policy. 
-          Not approved or endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. 
-          © Wizards of the Coast LLC.
-        </p>
-        <p style={{ margin: 0, fontWeight: 'bold', color: 'var(--text-white)' }}>
-          🔒 Privacy Notice: Loreweaver is a client-side tool. Your decklists are analyzed locally in your browser and are never saved, tracked, or stored on any server.
-        </p>
-      </footer>
-
-      {/* Bottom Nav tabs bar */}
+      {/* 1. Bottom Nav tabs bar MOVED UP */}
       <nav className="bottom-nav">
         <button 
           className={`nav-tab ${activeTab === 'input' ? 'active' : ''}`}
@@ -910,9 +902,18 @@ function App() {
           <span className="nav-icon">🏗️</span>
           <span>Builder</span>
         </button>
+        <button 
+          className={`nav-tab ${activeTab === 'legal' ? 'active' : ''}`}
+          onClick={() => setActiveTab('legal')}
+        >
+          <span className="nav-icon">📜</span>
+          <span>Legal</span>
+        </button>
       </nav>
     </div>
   );
 }
 
 export default App;
+
+

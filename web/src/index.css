@@ -38,13 +38,12 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  max-width: 500px; /* Force mobile portrait look in desktop browsers */
+  height: 100dvh; /* Locks exactly to the screen height */
+  max-width: 500px;
   margin: 0 auto;
   background-color: var(--bg-primary);
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-  position: relative;
-  padding-bottom: 70px; /* Space for bottom nav bar */
+  overflow: hidden; /* Prevents the whole browser from scrolling */
 }
 
 /* Header */
@@ -76,17 +75,15 @@ body {
 
 /* Main Content Area */
 .tab-content {
-  flex: 1;
+  flex: 1; /* Pushes header up and nav down */
   padding: 16px;
-  overflow-y: auto;
+  overflow-y: auto; /* Makes the data scroll internally */
 }
 
 /* Bottom Navigation Bar */
 .bottom-nav {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0; /* Prevents the nav bar from being crushed */
+  width: 100%;
   height: 64px;
   display: flex;
   background-color: var(--bg-panel);
@@ -129,13 +126,17 @@ h2 {
   font-weight: 700;
 }
 
-/* Cards */
 .card {
   background-color: var(--bg-card);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
   border: 1px solid var(--border-purple);
+}
+
+/* ADD THIS BLOCK: Removes the bottom margin from the final card in the stack */
+.card:last-child {
+  margin-bottom: 0;
 }
 
 /* Inputs & Form Fields */
